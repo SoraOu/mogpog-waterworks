@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "mogpog-waterworks",
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -15,7 +16,8 @@
         "backgroundColor": "#1B4F72",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.soraaaaaaaa.mogpogwaterworks"
     },
     "web": {
       "bundler": "metro",
