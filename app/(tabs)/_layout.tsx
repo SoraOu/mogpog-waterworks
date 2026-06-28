@@ -1,6 +1,9 @@
-import { Tabs } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Tabs, useRouter } from 'expo-router';
+import { TouchableOpacity, Text } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/theme';
-import { Text } from 'react-native';
+import { getSetting } from '../../db/queries';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return (
@@ -11,6 +14,16 @@ function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
 }
 
 export default function TabLayout() {
+  const router = useRouter();
+  const [readerName, setReaderName] = useState('Mogpog Waterworks');
+
+  useFocusEffect(
+    useCallback(() => {
+      const name = getSetting('reader_name');
+      setReaderName(name && name.trim() ? name.trim() : 'Mogpog Waterworks');
+    }, [])
+  );
+
   return (
     <Tabs
       screenOptions={{
@@ -34,7 +47,15 @@ export default function TabLayout() {
           title: 'Barangays',
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🏘️" focused={focused} />,
-          headerTitle: 'Mogpog Waterworks',
+          headerTitle: readerName,
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => router.push('/settings')}
+              style={{ marginRight: 16 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 20 }}>⚙️</Text>
+            </TouchableOpacity>
+          ),
         }}
       />
       <Tabs.Screen

@@ -53,5 +53,10 @@ export function initDb(): void {
       imported_at TEXT NOT NULL,
       accounts_loaded INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 }

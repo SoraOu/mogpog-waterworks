@@ -27,7 +27,5 @@ export default function StatusDot({ status, size = 10 }: Props) {
 }
 
 const styles = StyleSheet.create({
-  dot: {
-    flexShrink: 0,
-  },
+  dot: { flexShrink: 0 },
 });

@@ -7,6 +7,8 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -17,6 +19,7 @@ import {
   getExportData,
   getOverallProgress,
   currentMonth,
+  getSetting,
 } from '../../db/queries';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
@@ -36,21 +39,40 @@ const EXPORT_HEADERS = [
   'Remaining Balance',
 ];
 
+function generateMonthOptions(): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push(val);
+  }
+  return months;
+}
+
+function monthLabel(m: string): string {
+  const [y, mo] = m.split('-');
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
+}
+
 export default function ExportScreen() {
   const [barangays, setBarangays] = useState<BarangayMeta[]>([]);
   const [progress, setProgress] = useState({ total: 0, done: 0 });
   const [loading, setLoading] = useState<string | null>(null);
-  const month = currentMonth();
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const monthOptions = generateMonthOptions();
 
   const load = useCallback(() => {
     setBarangays(getAllBarangaysForExport());
-    setProgress(getOverallProgress(month));
-  }, [month]);
+    setProgress(getOverallProgress(selectedMonth));
+  }, [selectedMonth]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   function buildSheet(barangayId: number) {
-    const rows = getExportData(barangayId, month);
+    const rows = getExportData(barangayId, selectedMonth);
     const data = rows.map((r) => ({
       'Subscriber Name': r.subscriberName,
       'Type': r.type,
@@ -70,14 +92,19 @@ export default function ExportScreen() {
   async function exportBarangay(barangay: BarangayMeta) {
     setLoading(barangay.name);
     try {
+      const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
       const wb = XLSX.utils.book_new();
       const ws = buildSheet(barangay.id);
       XLSX.utils.book_append_sheet(wb, ws, barangay.name);
       const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const filename = `${barangay.name.replace(/\s+/g, '_')}_${month}.xlsx`;
+      const safeName = readerName.replace(/\s+/g, '_');
+      const filename = `${safeName}_${barangay.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
-      await Sharing.shareAsync(path, { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dialogTitle: `Export — ${barangay.name}` });
+      await Sharing.shareAsync(path, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: `Export – ${barangay.name}`,
+      });
     } catch (e) {
       Alert.alert('Export failed', String(e));
     } finally {
@@ -88,16 +115,21 @@ export default function ExportScreen() {
   async function exportAll() {
     setLoading('all');
     try {
+      const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
       const wb = XLSX.utils.book_new();
       for (const b of barangays) {
         const ws = buildSheet(b.id);
         XLSX.utils.book_append_sheet(wb, ws, b.name);
       }
       const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const filename = `Mogpog_Waterworks_${month}.xlsx`;
+      const safeName = readerName.replace(/\s+/g, '_');
+      const filename = `${safeName}_All_Barangays_${selectedMonth}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
-      await Sharing.shareAsync(path, { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dialogTitle: 'Export — All Barangays' });
+      await Sharing.shareAsync(path, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: 'Export – All Barangays',
+      });
     } catch (e) {
       Alert.alert('Export failed', String(e));
     } finally {
@@ -109,9 +141,18 @@ export default function ExportScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Month picker */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Export Month</Text>
+        <TouchableOpacity style={styles.monthBtn} onPress={() => setShowMonthPicker(true)}>
+          <Text style={styles.monthBtnText}>{monthLabel(selectedMonth)}</Text>
+          <Text style={styles.monthBtnChevron}>▾</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Overall progress */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Monthly Progress — {month}</Text>
+        <Text style={styles.cardTitle}>Progress – {monthLabel(selectedMonth)}</Text>
         <View style={styles.progressRow}>
           <Text style={styles.progressLabel}>{progress.done} / {progress.total} accounts read</Text>
           <Text style={styles.pct}>{pct}%</Text>
@@ -156,6 +197,27 @@ export default function ExportScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Month picker modal */}
+      <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowMonthPicker(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Select Month</Text>
+          {monthOptions.map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
+              onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+            >
+              <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
+                {monthLabel(m)}
+              </Text>
+              {m === selectedMonth && <Text style={styles.checkmark}>✓</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -172,6 +234,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  monthBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  monthBtnText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.primary },
+  monthBtnChevron: { fontSize: FontSize.lg, color: Colors.textMuted },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   progressLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   pct: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.primary },
@@ -196,4 +270,33 @@ const styles = StyleSheet.create({
   },
   barangayName: { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: '500' },
   exportChip: { fontSize: FontSize.sm, color: Colors.primaryLight, fontWeight: '600' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    maxHeight: '60%',
+  },
+  sheetHandle: {
+    width: 40, height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: Radius.full,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
+  },
+  sheetTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
+  monthOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  monthOptionActive: { backgroundColor: Colors.surfaceAlt },
+  monthOptionText: { fontSize: FontSize.md, color: Colors.textPrimary },
+  monthOptionTextActive: { fontWeight: '700', color: Colors.primary },
+  checkmark: { color: Colors.green, fontWeight: '700', fontSize: FontSize.md },
 });

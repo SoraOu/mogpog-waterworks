@@ -7,13 +7,20 @@ import {
   StyleSheet,
   Modal,
   Pressable,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { getAccount, getReadingsForAccount } from '../../db/queries';
-import { Account, Reading } from '../../types';
+import {
+  getAccount,
+  getReadingsForAccount,
+  updateAccountDetails,
+  deleteAccount,
+  deleteReading,
+} from '../../db/queries';
+import { Account, Reading, LineStatus, MeterStatus } from '../../types';
 import StatusDot from '../../components/StatusDot';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
-import { currentMonth } from '../../db/queries';
 
 function monthLabel(m: string) {
   const [y, mo] = m.split('-');
@@ -23,10 +30,12 @@ function monthLabel(m: string) {
 
 function readingStatusColor(r: Reading) {
   if (r.presentReading === null) return 'orange' as const;
-  if (r.remark === 'High consumption' || (r.consumption !== null && r.consumption > 50)) return 'red' as const;
   if (r.remark && r.remark !== 'No issue') return 'orange' as const;
   return 'green' as const;
 }
+
+const LINE_STATUSES: LineStatus[] = ['Operational', 'Disconnected', 'No Occupant', 'Temporary Closed'];
+const METER_STATUSES: MeterStatus[] = ['In-service', 'Blurred'];
 
 export default function AccountDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -34,6 +43,13 @@ export default function AccountDetailScreen() {
   const [account, setAccount] = useState<Account | null>(null);
   const [readings, setReadings] = useState<Reading[]>([]);
   const [selectedReading, setSelectedReading] = useState<Reading | null>(null);
+
+  // Edit account modal
+  const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editLine, setEditLine] = useState<LineStatus>('Operational');
+  const [editMeter, setEditMeter] = useState<MeterStatus>('In-service');
+  const [editPrevReading, setEditPrevReading] = useState('');
 
   const load = useCallback(() => {
     const a = getAccount(Number(id));
@@ -45,9 +61,6 @@ export default function AccountDetailScreen() {
 
   if (!account) return null;
 
-  const thisMonth = currentMonth();
-  const hasCurrentReading = readings.some((r) => r.month === thisMonth);
-
   const lineStatusColor: Record<string, string> = {
     Operational: Colors.green,
     Disconnected: Colors.red,
@@ -55,12 +68,88 @@ export default function AccountDetailScreen() {
     'Temporary Closed': Colors.orange,
   };
 
+  function openEdit() {
+    setEditName(account!.subscriberName);
+    setEditLine(account!.lineStatus);
+    setEditMeter(account!.meterStatus);
+    setEditPrevReading(account!.previousReading != null ? String(account!.previousReading) : '');
+    setShowEdit(true);
+  }
+
+  function saveEdit() {
+    if (!editName.trim()) {
+      Alert.alert('Name required', 'Subscriber name cannot be empty.');
+      return;
+    }
+    updateAccountDetails(Number(id), {
+      subscriberName: editName.trim(),
+      lineStatus: editLine,
+      meterStatus: editMeter,
+      previousReading: editPrevReading !== '' ? parseFloat(editPrevReading) : null,
+    });
+    setShowEdit(false);
+    load();
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete Account',
+      `Delete "${account!.subscriberName}" and all its readings? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteAccount(Number(id));
+            router.back();
+          },
+        },
+      ]
+    );
+  }
+
+  function handleDeleteReading(r: Reading) {
+    Alert.alert(
+      'Delete Reading',
+      `Delete the reading for ${monthLabel(r.month)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteReading(Number(id), r.month);
+            setSelectedReading(null);
+            load();
+          },
+        },
+      ]
+    );
+  }
+
+  // Always opens reading form — month picker inside lets them choose
+  function handleAddReading() {
+    router.push(`/reading/${id}`);
+  }
+
+  // Directly edit a specific month's reading
+  function handleEditReading(r: Reading) {
+    setSelectedReading(null);
+    router.push(`/reading/${id}?month=${r.month}`);
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: Colors.background }}>
       <ScrollView contentContainerStyle={styles.content}>
         {/* Subscriber info card */}
         <View style={styles.card}>
-          <Text style={styles.subscriberName}>{account.subscriberName}</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.subscriberName}>{account.subscriberName}</Text>
+            <TouchableOpacity style={styles.editAccountBtn} onPress={openEdit}>
+              <Text style={styles.editAccountBtnText}>✏️ Edit</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.infoGrid}>
             <InfoRow label="Type" value={account.type} />
             <InfoRow
@@ -88,6 +177,9 @@ export default function AccountDetailScreen() {
               <InfoRow label="Previous Reading" value={`${account.previousReading} m³`} />
             )}
           </View>
+          <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
+            <Text style={styles.deleteAccountBtnText}>🗑 Delete Account</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Reading history */}
@@ -115,26 +207,31 @@ export default function AccountDetailScreen() {
                   {r.remark && r.remark !== 'No issue' ? `  ·  ${r.remark}` : ''}
                 </Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              {/* Inline edit button */}
+              <TouchableOpacity
+                style={styles.editReadingBtn}
+                onPress={() => handleEditReading(r)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.editReadingBtnText}>Edit ›</Text>
+              </TouchableOpacity>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      {/* Add reading FAB */}
+      {/* Add Reading FAB — always visible, month picker inside reading form */}
       <View style={styles.fabWrap}>
         <TouchableOpacity
-          style={[styles.fab, hasCurrentReading && styles.fabEdit]}
-          onPress={() => router.push(`/reading/${id}`)}
+          style={styles.fab}
+          onPress={handleAddReading}
           activeOpacity={0.85}
         >
-          <Text style={styles.fabText}>
-            {hasCurrentReading ? '✏️  Edit Reading' : '+ Add Reading'}
-          </Text>
+          <Text style={styles.fabText}>+ Add Reading</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Reading detail modal */}
+      {/* Reading detail modal (view + delete only) */}
       {selectedReading && (
         <Modal visible transparent animationType="slide" onRequestClose={() => setSelectedReading(null)}>
           <Pressable style={styles.overlay} onPress={() => setSelectedReading(null)} />
@@ -147,26 +244,16 @@ export default function AccountDetailScreen() {
               <DetailItem
                 label="Consumption"
                 value={selectedReading.consumption != null ? `${selectedReading.consumption} m³` : '—'}
-                highlight={selectedReading.consumption !== null && selectedReading.consumption > 50}
               />
-              {selectedReading.remark && (
-                <DetailItem label="Remark" value={selectedReading.remark} />
-              )}
-              {selectedReading.notes && (
-                <DetailItem label="Notes" value={selectedReading.notes} />
-              )}
-              {selectedReading.recordedBy && (
-                <DetailItem label="Recorded by" value={selectedReading.recordedBy} />
-              )}
+              {selectedReading.remark && <DetailItem label="Remark" value={selectedReading.remark} />}
+              {selectedReading.notes && <DetailItem label="Notes" value={selectedReading.notes} />}
+              {selectedReading.recordedBy && <DetailItem label="Recorded by" value={selectedReading.recordedBy} />}
               {selectedReading.dateRecorded && (
                 <DetailItem label="Date" value={new Date(selectedReading.dateRecorded).toLocaleString('en-PH')} />
               )}
             </View>
-            <TouchableOpacity
-              style={styles.editBtn}
-              onPress={() => { setSelectedReading(null); router.push(`/reading/${id}`); }}
-            >
-              <Text style={styles.editBtnText}>Edit this reading</Text>
+            <TouchableOpacity style={styles.deleteReadingBtn} onPress={() => handleDeleteReading(selectedReading)}>
+              <Text style={styles.deleteReadingBtnText}>🗑 Delete Reading</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedReading(null)}>
               <Text style={styles.closeBtnText}>Close</Text>
@@ -174,6 +261,67 @@ export default function AccountDetailScreen() {
           </View>
         </Modal>
       )}
+
+      {/* Edit account modal */}
+      <Modal visible={showEdit} transparent animationType="slide" onRequestClose={() => setShowEdit(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowEdit(false)} />
+        <ScrollView style={styles.editSheet} contentContainerStyle={styles.editSheetContent}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Edit Account</Text>
+
+          <Text style={styles.fieldLabel}>Subscriber Name</Text>
+          <TextInput
+            style={styles.textInput}
+            value={editName}
+            onChangeText={setEditName}
+            placeholder="Subscriber name"
+            placeholderTextColor={Colors.textMuted}
+          />
+
+          <Text style={styles.fieldLabel}>Line Status</Text>
+          <View style={styles.optionRow}>
+            {LINE_STATUSES.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.optionChip, editLine === s && styles.optionChipActive]}
+                onPress={() => setEditLine(s)}
+              >
+                <Text style={[styles.optionChipText, editLine === s && styles.optionChipTextActive]}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>Meter Status</Text>
+          <View style={styles.optionRow}>
+            {METER_STATUSES.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.optionChip, editMeter === s && styles.optionChipActive]}
+                onPress={() => setEditMeter(s)}
+              >
+                <Text style={[styles.optionChipText, editMeter === s && styles.optionChipTextActive]}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>Previous Reading (m³)</Text>
+          <TextInput
+            style={styles.textInput}
+            value={editPrevReading}
+            onChangeText={setEditPrevReading}
+            placeholder="e.g. 123.5"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="numeric"
+          />
+
+          <TouchableOpacity style={styles.saveBtn} onPress={saveEdit}>
+            <Text style={styles.saveBtnText}>Save Changes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowEdit(false)}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </Modal>
     </View>
   );
 }
@@ -191,7 +339,7 @@ function DetailItem({ label, value, highlight }: { label: string; value: string;
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[styles.detailValue, highlight && { color: Colors.red, fontWeight: '700' }]}>{value}</Text>
+      <Text style={[styles.detailValue, highlight && { color: Colors.red }]}>{value}</Text>
     </View>
   );
 }
@@ -202,69 +350,129 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.md,
+    gap: Spacing.sm,
     borderWidth: 1,
     borderColor: Colors.border,
-    gap: Spacing.sm,
   },
-  subscriberName: {
-    fontSize: FontSize.xl,
-    fontWeight: '800',
-    color: Colors.textPrimary,
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  subscriberName: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, flex: 1 },
+  editAccountBtn: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  infoGrid: { gap: 6 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  editAccountBtnText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '600' },
+  infoGrid: { gap: Spacing.xs },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
   infoLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   infoValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
-  sectionTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textSecondary, paddingHorizontal: 2 },
+  deleteAccountBtn: { marginTop: Spacing.sm, paddingVertical: Spacing.sm, alignItems: 'center' },
+  deleteAccountBtnText: { color: Colors.red, fontWeight: '600', fontSize: FontSize.sm },
+  sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
   emptyReadings: { padding: Spacing.lg, alignItems: 'center' },
-  emptyText: { color: Colors.textMuted },
+  emptyText: { fontSize: FontSize.md, color: Colors.textMuted },
   readingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     backgroundColor: Colors.surface,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
     borderRadius: Radius.md,
+    padding: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  readingInfo: { flex: 1 },
+  readingInfo: { flex: 1, gap: 2 },
   readingMonth: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
-  readingMeta: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
-  chevron: { fontSize: 20, color: Colors.textMuted },
-  fabWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.md, backgroundColor: Colors.surface, borderTopWidth: 1, borderTopColor: Colors.border },
+  readingMeta: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  editReadingBtn: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  editReadingBtnText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '700' },
+  fabWrap: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
   fab: {
     backgroundColor: Colors.primary,
     borderRadius: Radius.lg,
     paddingVertical: Spacing.md,
     alignItems: 'center',
   },
-  fabEdit: { backgroundColor: Colors.accent },
-  fabText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
-
-  // Modal
+  fabText: { color: '#fff', fontWeight: '800', fontSize: FontSize.md },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: Radius.lg,
     borderTopRightRadius: Radius.lg,
-    padding: Spacing.lg,
+    padding: Spacing.md,
     gap: Spacing.sm,
   },
-  sheetHandle: { width: 40, height: 4, backgroundColor: Colors.border, borderRadius: Radius.full, alignSelf: 'center', marginBottom: Spacing.sm },
-  sheetTitle: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary },
+  editSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    maxHeight: '85%',
+  },
+  editSheetContent: { padding: Spacing.md, gap: Spacing.sm, paddingBottom: Spacing.xxl },
+  sheetHandle: {
+    width: 40, height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: Radius.full,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
+  },
+  sheetTitle: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.sm },
   readingDetail: { gap: 8, marginVertical: Spacing.sm },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
   detailLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   detailValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
-  editBtn: {
-    backgroundColor: Colors.primaryLight,
-    borderRadius: Radius.md,
-    paddingVertical: Spacing.sm + 2,
-    alignItems: 'center',
-  },
-  editBtnText: { color: '#fff', fontWeight: '700' },
+  deleteReadingBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
+  deleteReadingBtnText: { color: Colors.red, fontWeight: '600' },
   closeBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
   closeBtnText: { color: Colors.textMuted, fontWeight: '600' },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase' },
+  textInput: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  optionChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm - 2,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  optionChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  optionChipText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary },
+  optionChipTextActive: { color: '#fff' },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: FontSize.md },
+  cancelBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
+  cancelBtnText: { color: Colors.textMuted, fontWeight: '600' },
 });

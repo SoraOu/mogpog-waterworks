@@ -5,7 +5,6 @@ export type ReadingRemark =
   | 'No issue'
   | 'Blurred meter'
   | 'No occupant'
-  | 'High consumption'
   | 'No reading';
 
 export type StatusColor = 'green' | 'orange' | 'red' | 'gray';

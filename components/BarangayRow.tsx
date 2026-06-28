@@ -44,7 +44,6 @@ export default function BarangayRow({ barangay, onPress }: Props) {
             {barangay.pendingCount} pending
           </Text>
         </View>
-        {/* Progress bar */}
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${pct}%` as any, backgroundColor: color }]} />
         </View>
@@ -70,24 +69,10 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
     gap: Spacing.md,
   },
-  left: {
-    flex: 1,
-    gap: 4,
-  },
-  name: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  counters: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    flexWrap: 'wrap',
-  },
-  counter: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
+  left: { flex: 1, gap: 4 },
+  name: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
+  counters: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+  counter: { fontSize: FontSize.sm, color: Colors.textSecondary },
   progressTrack: {
     height: 4,
     backgroundColor: Colors.border,
@@ -95,26 +80,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
     overflow: 'hidden',
   },
-  progressFill: {
-    height: 4,
-    borderRadius: Radius.full,
-  },
-  right: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: Radius.full,
-  },
-  statusText: {
-    fontSize: FontSize.xs,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  arrow: {
-    fontSize: 20,
-    color: Colors.textMuted,
-  },
+  progressFill: { height: 4, borderRadius: Radius.full },
+  right: { alignItems: 'center', gap: 4 },
+  statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
+  statusText: { fontSize: FontSize.xs, color: '#fff', fontWeight: '600' },
+  arrow: { fontSize: 20, color: Colors.textMuted },
 });

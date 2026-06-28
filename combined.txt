@@ -1,0 +1,3664 @@
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\(tabs)\export.tsx ===
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Modal,
+  Pressable,
+} from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { useFocusEffect } from 'expo-router';
+import * as XLSX from 'xlsx';
+import {
+  getAllBarangaysForExport,
+  getExportData,
+  getOverallProgress,
+  currentMonth,
+  getSetting,
+} from '../../db/queries';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+type BarangayMeta = { id: number; name: string };
+
+const EXPORT_HEADERS = [
+  'Subscriber Name',
+  'Type',
+  'Line Status',
+  'Water Meter Status',
+  'Previous Reading',
+  'Present Reading',
+  'Consumption',
+  'Remarks',
+  'Year of Last Payment',
+  'Month of Last Payment',
+  'Remaining Balance',
+];
+
+function generateMonthOptions(): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push(val);
+  }
+  return months;
+}
+
+function monthLabel(m: string): string {
+  const [y, mo] = m.split('-');
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
+}
+
+export default function ExportScreen() {
+  const [barangays, setBarangays] = useState<BarangayMeta[]>([]);
+  const [progress, setProgress] = useState({ total: 0, done: 0 });
+  const [loading, setLoading] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const monthOptions = generateMonthOptions();
+
+  const load = useCallback(() => {
+    setBarangays(getAllBarangaysForExport());
+    setProgress(getOverallProgress(selectedMonth));
+  }, [selectedMonth]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  function buildSheet(barangayId: number) {
+    const rows = getExportData(barangayId, selectedMonth);
+    const data = rows.map((r) => ({
+      'Subscriber Name': r.subscriberName,
+      'Type': r.type,
+      'Line Status': r.lineStatus,
+      'Water Meter Status': r.meterStatus,
+      'Previous Reading': r.previousReading ?? '',
+      'Present Reading': r.presentReading ?? '',
+      'Consumption': r.consumption ?? '',
+      'Remarks': r.remarks ?? '',
+      'Year of Last Payment': r.yearLastPayment ?? '',
+      'Month of Last Payment': r.monthLastPayment ?? '',
+      'Remaining Balance': r.remainingBalance ?? '',
+    }));
+    return XLSX.utils.json_to_sheet(data, { header: EXPORT_HEADERS });
+  }
+
+  async function exportBarangay(barangay: BarangayMeta) {
+    setLoading(barangay.name);
+    try {
+      const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
+      const wb = XLSX.utils.book_new();
+      const ws = buildSheet(barangay.id);
+      XLSX.utils.book_append_sheet(wb, ws, barangay.name);
+      const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const safeName = readerName.replace(/\s+/g, '_');
+      const filename = `${safeName}_${barangay.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`;
+      const path = FileSystem.cacheDirectory + filename;
+      await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
+      await Sharing.shareAsync(path, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: `Export – ${barangay.name}`,
+      });
+    } catch (e) {
+      Alert.alert('Export failed', String(e));
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function exportAll() {
+    setLoading('all');
+    try {
+      const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
+      const wb = XLSX.utils.book_new();
+      for (const b of barangays) {
+        const ws = buildSheet(b.id);
+        XLSX.utils.book_append_sheet(wb, ws, b.name);
+      }
+      const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const safeName = readerName.replace(/\s+/g, '_');
+      const filename = `${safeName}_All_Barangays_${selectedMonth}.xlsx`;
+      const path = FileSystem.cacheDirectory + filename;
+      await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
+      await Sharing.shareAsync(path, {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        dialogTitle: 'Export – All Barangays',
+      });
+    } catch (e) {
+      Alert.alert('Export failed', String(e));
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Month picker */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Export Month</Text>
+        <TouchableOpacity style={styles.monthBtn} onPress={() => setShowMonthPicker(true)}>
+          <Text style={styles.monthBtnText}>{monthLabel(selectedMonth)}</Text>
+          <Text style={styles.monthBtnChevron}>▾</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Overall progress */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Progress – {monthLabel(selectedMonth)}</Text>
+        <View style={styles.progressRow}>
+          <Text style={styles.progressLabel}>{progress.done} / {progress.total} accounts read</Text>
+          <Text style={styles.pct}>{pct}%</Text>
+        </View>
+        <View style={styles.track}>
+          <View style={[styles.fill, { width: `${pct}%` as any }]} />
+        </View>
+      </View>
+
+      {/* Export all */}
+      <TouchableOpacity
+        style={[styles.exportAllBtn, loading === 'all' && styles.btnDisabled]}
+        onPress={exportAll}
+        disabled={!!loading || barangays.length === 0}
+        activeOpacity={0.8}
+      >
+        {loading === 'all'
+          ? <ActivityIndicator color="#fff" />
+          : <Text style={styles.exportAllText}>📤  Export All Barangays (1 file)</Text>
+        }
+      </TouchableOpacity>
+
+      {/* Per-barangay */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Export by Barangay</Text>
+        {barangays.length === 0 && (
+          <Text style={styles.emptyHint}>No barangays imported yet.</Text>
+        )}
+        {barangays.map((b) => (
+          <TouchableOpacity
+            key={b.id}
+            style={[styles.barangayRow, loading === b.name && styles.btnDisabled]}
+            onPress={() => exportBarangay(b)}
+            disabled={!!loading}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.barangayName}>{b.name}</Text>
+            {loading === b.name
+              ? <ActivityIndicator size="small" color={Colors.primary} />
+              : <Text style={styles.exportChip}>Export ›</Text>
+            }
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Month picker modal */}
+      <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowMonthPicker(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Select Month</Text>
+          {monthOptions.map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
+              onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+            >
+              <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
+                {monthLabel(m)}
+              </Text>
+              {m === selectedMonth && <Text style={styles.checkmark}>✓</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.md, gap: Spacing.md },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  monthBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  monthBtnText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.primary },
+  monthBtnChevron: { fontSize: FontSize.lg, color: Colors.textMuted },
+  progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  progressLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  pct: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.primary },
+  track: { height: 8, backgroundColor: Colors.border, borderRadius: Radius.full, overflow: 'hidden' },
+  fill: { height: 8, backgroundColor: Colors.green, borderRadius: Radius.full },
+  exportAllBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md + 4,
+    alignItems: 'center',
+  },
+  exportAllText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
+  btnDisabled: { opacity: 0.5 },
+  emptyHint: { fontSize: FontSize.sm, color: Colors.textMuted },
+  barangayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.sm + 2,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  barangayName: { fontSize: FontSize.md, color: Colors.textPrimary, fontWeight: '500' },
+  exportChip: { fontSize: FontSize.sm, color: Colors.primaryLight, fontWeight: '600' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    maxHeight: '60%',
+  },
+  sheetHandle: {
+    width: 40, height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: Radius.full,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
+  },
+  sheetTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
+  monthOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  monthOptionActive: { backgroundColor: Colors.surfaceAlt },
+  monthOptionText: { fontSize: FontSize.md, color: Colors.textPrimary },
+  monthOptionTextActive: { fontWeight: '700', color: Colors.primary },
+  checkmark: { color: Colors.green, fontWeight: '700', fontSize: FontSize.md },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\(tabs)\import.tsx ===
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useFocusEffect } from 'expo-router';
+import * as XLSX from 'xlsx';
+import {
+  upsertBarangay,
+  upsertAccount,
+  updateAccountFields,
+  logImport,
+  getImportLog,
+} from '../../db/queries';
+import { ImportLog } from '../../types';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * Some balance cells contain Excel formula strings like "=603.75+75".
+ * This evaluates simple addition/subtraction formulas into a number.
+ * If it can't be parsed, returns null.
+ */
+function parseBalance(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === 'number') return raw;
+  const s = String(raw).trim();
+  if (s === '') return null;
+  // Handle formula strings like =603.75+75 or =86.25*4+75
+  if (s.startsWith('=')) {
+    try {
+      // Only allow safe math characters
+      const expr = s.slice(1).replace(/[^0-9+\-*/.]/g, '');
+      // eslint-disable-next-line no-new-func
+      const result = Function(`"use strict"; return (${expr})`)();
+      return typeof result === 'number' && isFinite(result) ? result : null;
+    } catch {
+      return null;
+    }
+  }
+  const n = parseFloat(s);
+  return isFinite(n) ? n : null;
+}
+
+/**
+ * Parses the "Last Payment" field which comes in many formats:
+ * - A JS Date object (from Excel date cells)
+ * - A string like "5/11/26", "03/17/26", "1/30/2026", "4/30/36"
+ * - A plain year number like 2025
+ * Returns { year, month } strings or nulls.
+ */
+function parseLastPayment(raw: unknown): { year: string | null; month: string | null } {
+  if (raw == null) return { year: null, month: null };
+
+  // JS Date from openpyxl / xlsx
+  if (raw instanceof Date) {
+    return {
+      year: String(raw.getFullYear()),
+      month: String(raw.getMonth() + 1).padStart(2, '0'),
+    };
+  }
+
+  if (typeof raw === 'number') {
+    // Plain year like 2025
+    if (raw > 1900 && raw < 2100) return { year: String(raw), month: null };
+    // Could be an Excel serial date number
+    const d = XLSX.SSF.parse_date_code(raw);
+    if (d) return { year: String(d.y), month: String(d.m).padStart(2, '0') };
+    return { year: null, month: null };
+  }
+
+  const s = String(raw).trim();
+  if (s === '' || s === ' ') return { year: null, month: null };
+
+  // Try M/D/YY or M/D/YYYY
+  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slashMatch) {
+    let yr = parseInt(slashMatch[3], 10);
+    if (yr < 100) yr += yr >= 50 ? 1900 : 2000;
+    const mo = parseInt(slashMatch[1], 10);
+    return { year: String(yr), month: String(mo).padStart(2, '0') };
+  }
+
+  // Plain 4-digit year
+  if (/^\d{4}$/.test(s)) return { year: s, month: null };
+
+  return { year: null, month: null };
+}
+
+/**
+ * Maps freeform remarks from the Excel to the app's remark types.
+ * The Excel uses all-caps and various wordings/combinations.
+ */
+function parseRemark(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).toUpperCase().trim();
+  if (s === '') return null;
+
+  if (s.includes('HIGH CONSUMPTION')) return 'High consumption';
+  if (s.includes('BLURRED')) return 'Blurred meter';
+  if (s.includes('NO OCCUPANT')) return 'No occupant';
+  if (s.includes('NO READING') || s.includes('NO METER READING') || s.includes('UNCHANGED')) return 'No reading';
+  if (s.includes('DISCONNECTED') || s.includes('DISC') || s.includes('CUT')) return 'No issue'; // disconnected is a line status, not a reading remark
+  return null;
+}
+
+/**
+ * Maps freeform line status values from the Excel.
+ */
+function parseLineStatus(raw: unknown): string {
+  if (raw == null) return 'Operational';
+  const s = String(raw).toUpperCase().trim();
+  if (s.includes('DISCONNECTED') || s.includes('DISC')) return 'Disconnected';
+  if (s.includes('NO OCCUPANT')) return 'No Occupant';
+  if (s.includes('TEMPORARY') || s.includes('TEMP')) return 'Temporary Closed';
+  if (s.includes('OPERATIONAL')) return 'Operational';
+  return 'Operational';
+}
+
+/**
+ * Maps freeform meter status values.
+ */
+function parseMeterStatus(raw: unknown): string {
+  if (raw == null) return 'In-service';
+  const s = String(raw).toUpperCase().trim();
+  if (s.includes('BLURRED')) return 'Blurred';
+  return 'In-service';
+}
+
+/**
+ * Finds the header row in a sheet. Scans the first 10 rows for one that
+ * contains a name-like keyword. Returns the 0-based row index, or 0.
+ */
+function findHeaderRowIndex(rows: unknown[][]): number {
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const row = rows[i];
+    const joined = row
+      .map((c) => (c != null ? String(c).toUpperCase() : ''))
+      .join(' ');
+    if (
+      joined.includes('SUBSCRIBER') ||
+      joined.includes('NAME OF') ||
+      joined.includes('NAME')
+    ) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Given a header row array, returns a map of { fieldKey: columnIndex }.
+ * Handles the different column name variations across sheets.
+ */
+function mapColumns(headerRow: unknown[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  headerRow.forEach((cell, i) => {
+    if (cell == null) return;
+    const s = String(cell).toUpperCase().trim();
+
+    if (s.includes('SUBSCRIBER') || s === 'NAME OF SUBSCRIBER' || s === "SUBSCRIBER'S NAME") {
+      map['name'] = i;
+    } else if (s === 'NAME OF SUBSCRIBERS' || (s.includes('NAME') && !map['name'])) {
+      map['name'] = i;
+    } else if (s === 'TYPE') {
+      map['type'] = i;
+    } else if (s.includes('LINE STATUS')) {
+      map['lineStatus'] = i;
+    } else if (s.includes('WATER METER STATUS') || s.includes('METER STATUS')) {
+      map['meterStatus'] = i;
+    } else if (s.includes('YEAR OF LAST') || s === 'YEAR') {
+      map['yearLastPayment'] = i;
+    } else if (s.includes('MONTH OF LAST') || s === 'MONTH') {
+      map['monthLastPayment'] = i;
+    } else if (s.includes('LAST PAYMENT') || s === 'LAST PAYMENT') {
+      map['lastPayment'] = i; // combined year+month field
+    } else if (s.includes('BALANCE') || s.includes('REMAINING BALANCE')) {
+      map['balance'] = i;
+    } else if (s.includes('REMARKS') || s === 'REMARKS') {
+      map['remarks'] = i;
+    } else if (s === 'BARANGAY') {
+      map['barangay'] = i;
+    }
+  });
+  return map;
+}
+
+// ─── Main import logic ─────────────────────────────────────────────────────
+
+export default function ImportScreen() {
+  const [loading, setLoading] = useState(false);
+  const [importLog, setImportLog] = useState<ImportLog[]>([]);
+
+  const loadLog = useCallback(() => {
+    setImportLog(getImportLog());
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadLog(); }, [loadLog]));
+
+  async function handlePick() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setLoading(true);
+
+      const b64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const workbook = XLSX.read(b64, { type: 'base64', cellDates: true });
+
+      let totalLoaded = 0;
+      const skippedSheets: string[] = [];
+
+      for (const sheetName of workbook.SheetNames) {
+        // Skip non-barangay sheets
+        const upperName = sheetName.toUpperCase().trim();
+        if (
+          upperName === 'SHEET1' ||
+          upperName === 'WATER SUBSCRIBERS' ||
+          upperName === 'SUMMARY'
+        ) {
+          // Sheet1 may have a barangay name in cell A1 — try to use that
+          if (upperName === 'SHEET1') {
+            const ws = workbook.Sheets[sheetName];
+            const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+              header: 1,
+              defval: null,
+            }) as unknown[][];
+            // First non-empty cell in first row is likely the barangay name
+            const firstRow = allRows[0] ?? [];
+            const barangayNameCell = firstRow.find(
+              (c) => c != null && String(c).trim() !== ''
+            );
+            if (barangayNameCell) {
+              const barangayName = String(barangayNameCell).trim();
+              const count = processSheet(ws, barangayName, allRows);
+              totalLoaded += count;
+            } else {
+              skippedSheets.push(sheetName);
+            }
+          } else {
+            skippedSheets.push(sheetName);
+          }
+          continue;
+        }
+
+        const ws = workbook.Sheets[sheetName];
+        const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+          header: 1,
+          defval: null,
+        }) as unknown[][];
+
+        const count = processSheet(ws, sheetName, allRows);
+        totalLoaded += count;
+      }
+
+      logImport(asset.name, totalLoaded);
+      loadLog();
+
+      let msg = `${totalLoaded} accounts loaded from ${workbook.SheetNames.length} sheet(s).`;
+      if (skippedSheets.length > 0) {
+        msg += `\n\nSkipped sheets: ${skippedSheets.join(', ')}`;
+      }
+      Alert.alert('Import complete', msg);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Import failed', String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /**
+   * Processes one sheet and inserts/updates accounts.
+   * Returns the number of accounts loaded.
+   */
+  function processSheet(
+    _ws: XLSX.WorkSheet,
+    barangayName: string,
+    allRows: unknown[][]
+  ): number {
+    if (allRows.length === 0) return 0;
+
+    const headerRowIdx = findHeaderRowIndex(allRows);
+    const headerRow = allRows[headerRowIdx] as unknown[];
+    const colMap = mapColumns(headerRow);
+
+    // Must at least have a name column
+    if (colMap['name'] === undefined) return 0;
+
+    const barangayId = upsertBarangay(barangayName);
+    let count = 0;
+
+    for (let i = headerRowIdx + 1; i < allRows.length; i++) {
+      const row = allRows[i] as unknown[];
+
+      // Get subscriber name
+      const rawName = row[colMap['name']];
+      if (rawName == null) continue;
+      const subscriberName = String(rawName).trim();
+      if (subscriberName === '' || /^\d+$/.test(subscriberName)) continue; // skip row numbers
+
+      // Type
+      const type =
+        colMap['type'] !== undefined
+          ? String(row[colMap['type']] ?? 'Residential').trim() || 'Residential'
+          : 'Residential';
+      const normalizedType =
+        type.toUpperCase() === 'COMMERCIAL' ? 'Commercial' : 'Residential';
+
+      // Line status — derive from remarks if no dedicated column
+      let lineStatus = 'Operational';
+      if (colMap['lineStatus'] !== undefined) {
+        lineStatus = parseLineStatus(row[colMap['lineStatus']]);
+      } else if (colMap['remarks'] !== undefined) {
+        const remarkRaw = row[colMap['remarks']];
+        const s = remarkRaw ? String(remarkRaw).toUpperCase() : '';
+        if (s.includes('DISCONNECTED') || s.includes('DISC') || s.includes('CUT')) {
+          lineStatus = 'Disconnected';
+        } else if (s.includes('NO OCCUPANT')) {
+          lineStatus = 'No Occupant';
+        } else if (s.includes('TEMPORARY CLOSED') || s.includes('TEMP CLOSED')) {
+          lineStatus = 'Temporary Closed';
+        }
+      }
+
+      // Meter status — derive from remarks if no dedicated column
+      let meterStatus = 'In-service';
+      if (colMap['meterStatus'] !== undefined) {
+        meterStatus = parseMeterStatus(row[colMap['meterStatus']]);
+      } else if (colMap['remarks'] !== undefined) {
+        const remarkRaw = row[colMap['remarks']];
+        const s = remarkRaw ? String(remarkRaw).toUpperCase() : '';
+        if (s.includes('BLURRED')) meterStatus = 'Blurred';
+      }
+
+      // Balance
+      const balance =
+        colMap['balance'] !== undefined
+          ? parseBalance(row[colMap['balance']])
+          : null;
+
+      // Last payment — either split year/month columns or combined
+      let yearLastPayment: string | null = null;
+      let monthLastPayment: string | null = null;
+
+      if (
+        colMap['yearLastPayment'] !== undefined &&
+        colMap['monthLastPayment'] !== undefined
+      ) {
+        // Dedicated year and month columns (WATER SUBSCRIBERS sheet)
+        const yr = row[colMap['yearLastPayment']];
+        const mo = row[colMap['monthLastPayment']];
+        yearLastPayment = yr != null ? String(yr).trim() : null;
+        monthLastPayment = mo != null ? String(mo).trim() : null;
+      } else if (colMap['lastPayment'] !== undefined) {
+        // Combined "Last Payment" column
+        const parsed = parseLastPayment(row[colMap['lastPayment']]);
+        yearLastPayment = parsed.year;
+        monthLastPayment = parsed.month;
+      }
+
+      const accountId = upsertAccount({
+        barangayId,
+        subscriberName,
+        type: normalizedType,
+        lineStatus,
+        meterStatus,
+        yearLastPayment,
+        monthLastPayment,
+        remainingBalance: balance,
+        previousReading: null, // Excel doesn't have meter readings
+      });
+
+      updateAccountFields(accountId, {
+        lineStatus,
+        meterStatus,
+        yearLastPayment,
+        monthLastPayment,
+        remainingBalance: balance,
+      });
+
+      count++;
+    }
+
+    return count;
+  }
+
+  function formatDate(iso: string) {
+    return new Date(iso).toLocaleDateString('en-PH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Load Subscriber List</Text>
+        <Text style={styles.cardBody}>
+          Select the Excel file (.xlsx) from the Mogpog Waterworks office.{'\n'}
+          Each sheet should represent one barangay. The importer will
+          automatically detect column names and formats.
+        </Text>
+        <TouchableOpacity
+          style={[styles.btn, loading && styles.btnDisabled]}
+          onPress={handlePick}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.btnText}>📂  Pick .xlsx file</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Supported Column Formats</Text>
+        <Text style={styles.cardBody}>
+          The importer handles all the barangay sheet formats in your Excel file,
+          including different column names, header row positions, freeform remarks,
+          formula-based balances, and mixed date formats.
+        </Text>
+        <View style={styles.tagRow}>
+          {[
+            'Name of Subscriber',
+            "Subscriber's Name",
+            'TYPE',
+            'Last Payment',
+            'Balance',
+            'Remarks',
+            'Line Status',
+            'Water Meter Status',
+          ].map((col) => (
+            <View key={col} style={styles.tag}>
+              <Text style={styles.tagText}>{col}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {importLog.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Import History</Text>
+          {importLog.map((log) => (
+            <View key={log.id} style={styles.logRow}>
+              <Text style={styles.logFile}>{log.filename}</Text>
+              <Text style={styles.logMeta}>
+                {log.accountsLoaded} accounts · {formatDate(log.importedAt)}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.md, gap: Spacing.md },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  cardBody: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
+  btn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  btnDisabled: { opacity: 0.5 },
+  btnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  tag: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  tagText: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: '600' },
+  logRow: {
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 2,
+  },
+  logFile: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
+  logMeta: { fontSize: FontSize.xs, color: Colors.textMuted },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\(tabs)\index.tsx ===
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  FlatList,
+  TextInput,
+  StyleSheet,
+  Text,
+  RefreshControl,
+  TouchableOpacity,
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { getAllBarangays, searchAllAccounts } from '../../db/queries';
+import { Barangay, Account } from '../../types';
+import BarangayRow from '../../components/BarangayRow';
+import AccountRow from '../../components/AccountRow';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+type SearchMode = 'barangay' | 'account';
+
+export default function HomeScreen() {
+  const router = useRouter();
+  const [barangays, setBarangays] = useState<Barangay[]>([]);
+  const [accountResults, setAccountResults] = useState<Account[]>([]);
+  const [query, setQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<SearchMode>('barangay');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(() => {
+    setBarangays(getAllBarangays());
+  }, []);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    load();
+    setRefreshing(false);
+  };
+
+  function handleQueryChange(text: string) {
+    setQuery(text);
+    if (searchMode === 'account' && text.length >= 2) {
+      setAccountResults(searchAllAccounts(text));
+    } else {
+      setAccountResults([]);
+    }
+  }
+
+  const filteredBarangays = barangays.filter((b) =>
+    b.name.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const totalAccounts = barangays.reduce((s, b) => s + b.totalAccounts, 0);
+  const totalDone = barangays.reduce((s, b) => s + b.doneCount, 0);
+  const totalIssues = barangays.reduce((s, b) => s + b.issueCount, 0);
+
+  return (
+    <View style={styles.container}>
+      {/* Summary banner */}
+      <View style={styles.banner}>
+        <View style={styles.stat}>
+          <Text style={styles.statNum}>{totalAccounts}</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.stat}>
+          <Text style={[styles.statNum, { color: Colors.green }]}>{totalDone}</Text>
+          <Text style={styles.statLabel}>Done</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.stat}>
+          <Text style={[styles.statNum, { color: Colors.orange }]}>{totalIssues}</Text>
+          <Text style={styles.statLabel}>Issues</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.stat}>
+          <Text style={[styles.statNum, { color: Colors.gray }]}>{totalAccounts - totalDone}</Text>
+          <Text style={styles.statLabel}>Pending</Text>
+        </View>
+      </View>
+
+      {/* Search mode toggle */}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, searchMode === 'barangay' && styles.toggleActive]}
+          onPress={() => { setSearchMode('barangay'); setQuery(''); setAccountResults([]); }}
+        >
+          <Text style={[styles.toggleText, searchMode === 'barangay' && styles.toggleTextActive]}>Barangay</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.toggleBtn, searchMode === 'account' && styles.toggleActive]}
+          onPress={() => { setSearchMode('account'); setQuery(''); setAccountResults([]); }}
+        >
+          <Text style={[styles.toggleText, searchMode === 'account' && styles.toggleTextActive]}>Account Search</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchWrap}>
+        <TextInput
+          style={styles.search}
+          placeholder={searchMode === 'barangay' ? 'Search barangay...' : 'Search all accounts...'}
+          placeholderTextColor={Colors.textMuted}
+          value={query}
+          onChangeText={handleQueryChange}
+          clearButtonMode="while-editing"
+        />
+      </View>
+
+      {/* Results */}
+      {searchMode === 'barangay' ? (
+        <FlatList
+          data={filteredBarangays}
+          keyExtractor={(b) => String(b.id)}
+          renderItem={({ item }) => (
+            <BarangayRow
+              barangay={item}
+              onPress={() => router.push(`/barangay/${item.id}?name=${encodeURIComponent(item.name)}`)}
+            />
+          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No barangays yet</Text>
+              <Text style={styles.emptyBody}>Go to Import to load the subscriber list.</Text>
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          data={accountResults}
+          keyExtractor={(a) => String(a.id)}
+          renderItem={({ item }) => (
+            <View>
+              <Text style={styles.barangayLabel}>{item.barangayName}</Text>
+              <AccountRow
+                account={item}
+                onPress={() => router.push(`/account/${item.id}`)}
+              />
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyBody}>
+                {query.length < 2 ? 'Type at least 2 characters to search.' : 'No accounts found.'}
+              </Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  banner: {
+    flexDirection: 'row',
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+  },
+  stat: { flex: 1, alignItems: 'center' },
+  statNum: { fontSize: FontSize.xl, fontWeight: '800', color: '#fff' },
+  statLabel: { fontSize: FontSize.xs, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
+  divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 4 },
+  toggleRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm + 2,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  toggleActive: { borderBottomColor: Colors.primary },
+  toggleText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textMuted },
+  toggleTextActive: { color: Colors.primary },
+  searchWrap: { padding: Spacing.sm, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  search: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  empty: { padding: Spacing.xl, alignItems: 'center', gap: Spacing.sm },
+  emptyTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textSecondary },
+  emptyBody: { fontSize: FontSize.md, color: Colors.textMuted, textAlign: 'center' },
+  barangayLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    textTransform: 'uppercase',
+    backgroundColor: Colors.background,
+  },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\(tabs)\_layout.tsx ===
+import { useCallback, useState } from 'react';
+import { Tabs, useRouter } from 'expo-router';
+import { TouchableOpacity, Text } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { Colors } from '../../constants/theme';
+import { getSetting } from '../../db/queries';
+
+function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
+  return (
+    <Text style={{ fontSize: focused ? 22 : 20, opacity: focused ? 1 : 0.6 }}>
+      {emoji}
+    </Text>
+  );
+}
+
+export default function TabLayout() {
+  const router = useRouter();
+  const [readerName, setReaderName] = useState('Mogpog Waterworks');
+
+  useFocusEffect(
+    useCallback(() => {
+      const name = getSetting('reader_name');
+      setReaderName(name && name.trim() ? name.trim() : 'Mogpog Waterworks');
+    }, [])
+  );
+
+  return (
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textMuted,
+        tabBarStyle: {
+          backgroundColor: Colors.surface,
+          borderTopColor: Colors.border,
+          height: 60,
+          paddingBottom: 8,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        headerStyle: { backgroundColor: Colors.primary },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '700' },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Barangays',
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🏘️" focused={focused} />,
+          headerTitle: readerName,
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={() => router.push('/settings')}
+              style={{ marginRight: 16 }}
+            >
+              <Text style={{ color: '#fff', fontSize: 20 }}>⚙️</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="export"
+        options={{
+          title: 'Export',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📤" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="import"
+        options={{
+          title: 'Import',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📥" focused={focused} />,
+        }}
+      />
+    </Tabs>
+  );
+}
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\account\add.tsx ===
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  createAccount,
+  createBarangay,
+  getAllBarangayNames,
+} from '../../db/queries';
+import { LineStatus, MeterStatus, AccountType } from '../../types';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+const LINE_STATUSES: LineStatus[] = ['Operational', 'Disconnected', 'No Occupant', 'Temporary Closed'];
+const METER_STATUSES: MeterStatus[] = ['In-service', 'Blurred'];
+const ACCOUNT_TYPES: AccountType[] = ['Residential', 'Commercial'];
+
+export default function AddAccountScreen() {
+  const { barangayId, barangayName } = useLocalSearchParams<{ barangayId: string; barangayName: string }>();
+  const router = useRouter();
+
+  const [name, setName] = useState('');
+  const [type, setType] = useState<AccountType>('Residential');
+  const [lineStatus, setLineStatus] = useState<LineStatus>('Operational');
+  const [meterStatus, setMeterStatus] = useState<MeterStatus>('In-service');
+  const [newBarangayName, setNewBarangayName] = useState('');
+  const [createNewBarangay, setCreateNewBarangay] = useState(false);
+
+  const decodedBarangayName = decodeURIComponent(barangayName ?? '');
+
+  function handleSave() {
+    if (!name.trim()) {
+      Alert.alert('Name required', 'Please enter the subscriber name.');
+      return;
+    }
+
+    let targetBarangayId = Number(barangayId);
+
+    if (createNewBarangay) {
+      if (!newBarangayName.trim()) {
+        Alert.alert('Barangay name required', 'Please enter the new barangay name.');
+        return;
+      }
+      targetBarangayId = createBarangay(newBarangayName.trim());
+    }
+
+    createAccount({
+      barangayId: targetBarangayId,
+      subscriberName: name.trim(),
+      type,
+      lineStatus,
+      meterStatus,
+    });
+
+    Alert.alert('Account created', `"${name.trim()}" has been added.`, [
+      { text: 'OK', onPress: () => router.back() },
+    ]);
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>New Account</Text>
+        <Text style={styles.barangayNote}>
+          Barangay: <Text style={styles.barangayName}>{decodedBarangayName}</Text>
+        </Text>
+      </View>
+
+      <Text style={styles.fieldLabel}>Subscriber Name *</Text>
+      <TextInput
+        style={styles.textInput}
+        value={name}
+        onChangeText={setName}
+        placeholder="Full name of subscriber"
+        placeholderTextColor={Colors.textMuted}
+      />
+
+      <Text style={styles.fieldLabel}>Account Type</Text>
+      <View style={styles.optionRow}>
+        {ACCOUNT_TYPES.map((t) => (
+          <TouchableOpacity
+            key={t}
+            style={[styles.optionChip, type === t && styles.optionChipActive]}
+            onPress={() => setType(t)}
+          >
+            <Text style={[styles.optionChipText, type === t && styles.optionChipTextActive]}>{t}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={styles.fieldLabel}>Line Status</Text>
+      <View style={styles.optionRow}>
+        {LINE_STATUSES.map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={[styles.optionChip, lineStatus === s && styles.optionChipActive]}
+            onPress={() => setLineStatus(s)}
+          >
+            <Text style={[styles.optionChipText, lineStatus === s && styles.optionChipTextActive]}>{s}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Text style={styles.fieldLabel}>Meter Status</Text>
+      <View style={styles.optionRow}>
+        {METER_STATUSES.map((s) => (
+          <TouchableOpacity
+            key={s}
+            style={[styles.optionChip, meterStatus === s && styles.optionChipActive]}
+            onPress={() => setMeterStatus(s)}
+          >
+            <Text style={[styles.optionChipText, meterStatus === s && styles.optionChipTextActive]}>{s}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Option to create new barangay */}
+      <TouchableOpacity
+        style={styles.newBarangayToggle}
+        onPress={() => setCreateNewBarangay((v) => !v)}
+      >
+        <View style={[styles.checkbox, createNewBarangay && styles.checkboxActive]}>
+          {createNewBarangay && <Text style={styles.checkmark}>✓</Text>}
+        </View>
+        <Text style={styles.newBarangayLabel}>Assign to a different / new barangay</Text>
+      </TouchableOpacity>
+
+      {createNewBarangay && (
+        <>
+          <Text style={styles.fieldLabel}>New Barangay Name</Text>
+          <TextInput
+            style={styles.textInput}
+            value={newBarangayName}
+            onChangeText={setNewBarangayName}
+            placeholder="e.g. Barangay Puting Buhangin"
+            placeholderTextColor={Colors.textMuted}
+          />
+        </>
+      )}
+
+      <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+        <Text style={styles.saveBtnText}>Create Account</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.md, gap: Spacing.md, paddingBottom: Spacing.xxl },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  barangayNote: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  barangayName: { fontWeight: '700', color: Colors.primary },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase' },
+  textInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  optionChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm - 2,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  optionChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  optionChipText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary },
+  optionChipTextActive: { color: '#fff' },
+  newBarangayToggle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  checkbox: {
+    width: 22, height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  checkmark: { color: '#fff', fontWeight: '800', fontSize: FontSize.sm },
+  newBarangayLabel: { fontSize: FontSize.md, color: Colors.textPrimary },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md + 4,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: FontSize.lg },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\account\[id].tsx ===
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  Pressable,
+  TextInput,
+  Alert,
+} from 'react-native';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import {
+  getAccount,
+  getReadingsForAccount,
+  updateAccountDetails,
+  deleteAccount,
+  deleteReading,
+} from '../../db/queries';
+import { Account, Reading, LineStatus, MeterStatus } from '../../types';
+import StatusDot from '../../components/StatusDot';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+function monthLabel(m: string) {
+  const [y, mo] = m.split('-');
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
+}
+
+function readingStatusColor(r: Reading) {
+  if (r.presentReading === null) return 'orange' as const;
+  if (r.remark === 'High consumption' || (r.consumption !== null && r.consumption > 50)) return 'red' as const;
+  if (r.remark && r.remark !== 'No issue') return 'orange' as const;
+  return 'green' as const;
+}
+
+const LINE_STATUSES: LineStatus[] = ['Operational', 'Disconnected', 'No Occupant', 'Temporary Closed'];
+const METER_STATUSES: MeterStatus[] = ['In-service', 'Blurred'];
+
+export default function AccountDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const [account, setAccount] = useState<Account | null>(null);
+  const [readings, setReadings] = useState<Reading[]>([]);
+  const [selectedReading, setSelectedReading] = useState<Reading | null>(null);
+
+  // Edit account modal
+  const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editLine, setEditLine] = useState<LineStatus>('Operational');
+  const [editMeter, setEditMeter] = useState<MeterStatus>('In-service');
+  const [editPrevReading, setEditPrevReading] = useState('');
+
+  const load = useCallback(() => {
+    const a = getAccount(Number(id));
+    setAccount(a);
+    setReadings(getReadingsForAccount(Number(id)));
+  }, [id]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  if (!account) return null;
+
+  const lineStatusColor: Record<string, string> = {
+    Operational: Colors.green,
+    Disconnected: Colors.red,
+    'No Occupant': Colors.orange,
+    'Temporary Closed': Colors.orange,
+  };
+
+  function openEdit() {
+    setEditName(account!.subscriberName);
+    setEditLine(account!.lineStatus);
+    setEditMeter(account!.meterStatus);
+    setEditPrevReading(account!.previousReading != null ? String(account!.previousReading) : '');
+    setShowEdit(true);
+  }
+
+  function saveEdit() {
+    if (!editName.trim()) {
+      Alert.alert('Name required', 'Subscriber name cannot be empty.');
+      return;
+    }
+    updateAccountDetails(Number(id), {
+      subscriberName: editName.trim(),
+      lineStatus: editLine,
+      meterStatus: editMeter,
+      previousReading: editPrevReading !== '' ? parseFloat(editPrevReading) : null,
+    });
+    setShowEdit(false);
+    load();
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete Account',
+      `Delete "${account!.subscriberName}" and all its readings? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteAccount(Number(id));
+            router.back();
+          },
+        },
+      ]
+    );
+  }
+
+  function handleDeleteReading(r: Reading) {
+    Alert.alert(
+      'Delete Reading',
+      `Delete the reading for ${monthLabel(r.month)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteReading(Number(id), r.month);
+            setSelectedReading(null);
+            load();
+          },
+        },
+      ]
+    );
+  }
+
+  // Always opens reading form — month picker inside lets them choose
+  function handleAddReading() {
+    router.push(`/reading/${id}`);
+  }
+
+  // Directly edit a specific month's reading
+  function handleEditReading(r: Reading) {
+    setSelectedReading(null);
+    router.push(`/reading/${id}?month=${r.month}`);
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: Colors.background }}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Subscriber info card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.subscriberName}>{account.subscriberName}</Text>
+            <TouchableOpacity style={styles.editAccountBtn} onPress={openEdit}>
+              <Text style={styles.editAccountBtnText}>✏️ Edit</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.infoGrid}>
+            <InfoRow label="Type" value={account.type} />
+            <InfoRow
+              label="Line Status"
+              value={account.lineStatus}
+              valueColor={lineStatusColor[account.lineStatus]}
+            />
+            <InfoRow
+              label="Meter"
+              value={account.meterStatus}
+              valueColor={account.meterStatus === 'Blurred' ? Colors.orange : Colors.green}
+            />
+            <InfoRow label="Barangay" value={account.barangayName} />
+            {account.yearLastPayment && (
+              <InfoRow label="Last Payment" value={`${account.monthLastPayment ?? '?'} ${account.yearLastPayment}`} />
+            )}
+            {account.remainingBalance != null && (
+              <InfoRow
+                label="Balance"
+                value={`₱${account.remainingBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}`}
+                valueColor={account.remainingBalance > 0 ? Colors.red : Colors.green}
+              />
+            )}
+            {account.previousReading != null && (
+              <InfoRow label="Previous Reading" value={`${account.previousReading} m³`} />
+            )}
+          </View>
+          <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
+            <Text style={styles.deleteAccountBtnText}>🗑 Delete Account</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Reading history */}
+        <Text style={styles.sectionTitle}>Reading History</Text>
+        {readings.length === 0 && (
+          <View style={styles.emptyReadings}>
+            <Text style={styles.emptyText}>No readings recorded yet.</Text>
+          </View>
+        )}
+        {readings.map((r) => {
+          const color = readingStatusColor(r);
+          return (
+            <TouchableOpacity
+              key={r.id}
+              style={styles.readingRow}
+              onPress={() => setSelectedReading(r)}
+              activeOpacity={0.7}
+            >
+              <StatusDot status={color} size={10} />
+              <View style={styles.readingInfo}>
+                <Text style={styles.readingMonth}>{monthLabel(r.month)}</Text>
+                <Text style={styles.readingMeta}>
+                  {r.presentReading != null ? `${r.presentReading} m³` : '—'}
+                  {r.consumption != null ? `  ·  Δ ${r.consumption} m³` : ''}
+                  {r.remark && r.remark !== 'No issue' ? `  ·  ${r.remark}` : ''}
+                </Text>
+              </View>
+              {/* Inline edit button */}
+              <TouchableOpacity
+                style={styles.editReadingBtn}
+                onPress={() => handleEditReading(r)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.editReadingBtnText}>Edit ›</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Add Reading FAB — always visible, month picker inside reading form */}
+      <View style={styles.fabWrap}>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleAddReading}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.fabText}>+ Add Reading</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Reading detail modal (view + delete only) */}
+      {selectedReading && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setSelectedReading(null)}>
+          <Pressable style={styles.overlay} onPress={() => setSelectedReading(null)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>{monthLabel(selectedReading.month)}</Text>
+            <View style={styles.readingDetail}>
+              <DetailItem label="Previous" value={selectedReading.previousReading != null ? `${selectedReading.previousReading} m³` : '—'} />
+              <DetailItem label="Present" value={selectedReading.presentReading != null ? `${selectedReading.presentReading} m³` : '—'} />
+              <DetailItem
+                label="Consumption"
+                value={selectedReading.consumption != null ? `${selectedReading.consumption} m³` : '—'}
+                highlight={selectedReading.consumption !== null && selectedReading.consumption > 50}
+              />
+              {selectedReading.remark && <DetailItem label="Remark" value={selectedReading.remark} />}
+              {selectedReading.notes && <DetailItem label="Notes" value={selectedReading.notes} />}
+              {selectedReading.recordedBy && <DetailItem label="Recorded by" value={selectedReading.recordedBy} />}
+              {selectedReading.dateRecorded && (
+                <DetailItem label="Date" value={new Date(selectedReading.dateRecorded).toLocaleString('en-PH')} />
+              )}
+            </View>
+            <TouchableOpacity style={styles.deleteReadingBtn} onPress={() => handleDeleteReading(selectedReading)}>
+              <Text style={styles.deleteReadingBtnText}>🗑 Delete Reading</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedReading(null)}>
+              <Text style={styles.closeBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
+
+      {/* Edit account modal */}
+      <Modal visible={showEdit} transparent animationType="slide" onRequestClose={() => setShowEdit(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowEdit(false)} />
+        <ScrollView style={styles.editSheet} contentContainerStyle={styles.editSheetContent}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Edit Account</Text>
+
+          <Text style={styles.fieldLabel}>Subscriber Name</Text>
+          <TextInput
+            style={styles.textInput}
+            value={editName}
+            onChangeText={setEditName}
+            placeholder="Subscriber name"
+            placeholderTextColor={Colors.textMuted}
+          />
+
+          <Text style={styles.fieldLabel}>Line Status</Text>
+          <View style={styles.optionRow}>
+            {LINE_STATUSES.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.optionChip, editLine === s && styles.optionChipActive]}
+                onPress={() => setEditLine(s)}
+              >
+                <Text style={[styles.optionChipText, editLine === s && styles.optionChipTextActive]}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>Meter Status</Text>
+          <View style={styles.optionRow}>
+            {METER_STATUSES.map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.optionChip, editMeter === s && styles.optionChipActive]}
+                onPress={() => setEditMeter(s)}
+              >
+                <Text style={[styles.optionChipText, editMeter === s && styles.optionChipTextActive]}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>Previous Reading (m³)</Text>
+          <TextInput
+            style={styles.textInput}
+            value={editPrevReading}
+            onChangeText={setEditPrevReading}
+            placeholder="e.g. 123.5"
+            placeholderTextColor={Colors.textMuted}
+            keyboardType="numeric"
+          />
+
+          <TouchableOpacity style={styles.saveBtn} onPress={saveEdit}>
+            <Text style={styles.saveBtnText}>Save Changes</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowEdit(false)}>
+            <Text style={styles.cancelBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </Modal>
+    </View>
+  );
+}
+
+function InfoRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <View style={styles.infoRow}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={[styles.infoValue, valueColor ? { color: valueColor } : {}]}>{value}</Text>
+    </View>
+  );
+}
+
+function DetailItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={[styles.detailValue, highlight && { color: Colors.red }]}>{value}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { padding: Spacing.md, gap: Spacing.md, paddingBottom: 100 },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  subscriberName: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, flex: 1 },
+  editAccountBtn: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  editAccountBtnText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '600' },
+  infoGrid: { gap: Spacing.xs },
+  infoRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  infoLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  infoValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
+  deleteAccountBtn: { marginTop: Spacing.sm, paddingVertical: Spacing.sm, alignItems: 'center' },
+  deleteAccountBtnText: { color: Colors.red, fontWeight: '600', fontSize: FontSize.sm },
+  sectionTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  emptyReadings: { padding: Spacing.lg, alignItems: 'center' },
+  emptyText: { fontSize: FontSize.md, color: Colors.textMuted },
+  readingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  readingInfo: { flex: 1, gap: 2 },
+  readingMonth: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
+  readingMeta: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  editReadingBtn: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  editReadingBtnText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '700' },
+  fabWrap: {
+    position: 'absolute',
+    bottom: 0, left: 0, right: 0,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  fab: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  fabText: { color: '#fff', fontWeight: '800', fontSize: FontSize.md },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  editSheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    maxHeight: '85%',
+  },
+  editSheetContent: { padding: Spacing.md, gap: Spacing.sm, paddingBottom: Spacing.xxl },
+  sheetHandle: {
+    width: 40, height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: Radius.full,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
+  },
+  sheetTitle: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, marginBottom: Spacing.sm },
+  readingDetail: { gap: 8, marginVertical: Spacing.sm },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  detailLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  detailValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
+  deleteReadingBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
+  deleteReadingBtnText: { color: Colors.red, fontWeight: '600' },
+  closeBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
+  closeBtnText: { color: Colors.textMuted, fontWeight: '600' },
+  fieldLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase' },
+  textInput: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  optionChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm - 2,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  optionChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  optionChipText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary },
+  optionChipTextActive: { color: '#fff' },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: FontSize.md },
+  cancelBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
+  cancelBtnText: { color: Colors.textMuted, fontWeight: '600' },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\barangay\[id].tsx ===
+import React, { useCallback, useState } from 'react';
+import {
+  View,
+  FlatList,
+  TextInput,
+  Text,
+  StyleSheet,
+  RefreshControl,
+  TouchableOpacity,
+  Alert,
+} from 'react-native';
+import { useLocalSearchParams, useRouter, useFocusEffect, useNavigation } from 'expo-router';
+import {
+  getAccountsByBarangay,
+  markNoReading,
+  currentMonth,
+  getSetting,
+  SortField,
+  SortDir,
+} from '../../db/queries';
+import { Account } from '../../types';
+import AccountRow from '../../components/AccountRow';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+export default function BarangayScreen() {
+  const { id, name } = useLocalSearchParams<{ id: string; name: string }>();
+  const router = useRouter();
+  const navigation = useNavigation();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [query, setQuery] = useState('');
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const load = useCallback(() => {
+    navigation.setOptions({ title: decodeURIComponent(name ?? 'Accounts') });
+    setAccounts(getAccountsByBarangay(Number(id), sortField, sortDir));
+  }, [id, name, sortField, sortDir]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  }
+
+  function handleMarkNoReading(account: Account) {
+    const month = currentMonth();
+    const readerName = getSetting('reader_name');
+    Alert.alert(
+      'Mark as No Reading',
+      `Mark "${account.subscriberName}" as No Reading for ${month}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: () => {
+            markNoReading(account.id, month, readerName);
+            load();
+          },
+        },
+      ]
+    );
+  }
+
+  const filtered = accounts.filter((a) =>
+    a.subscriberName.toLowerCase().includes(query.toLowerCase())
+  );
+
+  const done = accounts.filter((a) => a.currentMonthStatus !== 'gray').length;
+  const issues = accounts.filter((a) => ['orange', 'red'].includes(a.currentMonthStatus)).length;
+  const pending = accounts.filter((a) => a.currentMonthStatus === 'gray').length;
+
+  const sortLabel = (field: SortField) => {
+    if (sortField !== field) return field === 'name' ? 'A-Z' : 'Status';
+    if (field === 'name') return sortDir === 'asc' ? 'A-Z ↑' : 'Z-A ↓';
+    return sortDir === 'asc' ? 'Status ↑' : 'Status ↓';
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Counters */}
+      <View style={styles.counters}>
+        <View style={[styles.chip, { backgroundColor: Colors.greenLight }]}>
+          <Text style={[styles.chipNum, { color: Colors.green }]}>{done}</Text>
+          <Text style={[styles.chipLabel, { color: Colors.green }]}>Done</Text>
+        </View>
+        <View style={[styles.chip, { backgroundColor: Colors.orangeLight }]}>
+          <Text style={[styles.chipNum, { color: Colors.orange }]}>{issues}</Text>
+          <Text style={[styles.chipLabel, { color: Colors.orange }]}>Issues</Text>
+        </View>
+        <View style={[styles.chip, { backgroundColor: Colors.grayLight }]}>
+          <Text style={[styles.chipNum, { color: Colors.gray }]}>{pending}</Text>
+          <Text style={[styles.chipLabel, { color: Colors.gray }]}>Pending</Text>
+        </View>
+      </View>
+
+      {/* Sort + Add */}
+      <View style={styles.toolbar}>
+        <View style={styles.sortRow}>
+          <Text style={styles.sortLabel}>Sort:</Text>
+          <TouchableOpacity
+            style={[styles.sortBtn, sortField === 'name' && styles.sortBtnActive]}
+            onPress={() => toggleSort('name')}
+          >
+            <Text style={[styles.sortBtnText, sortField === 'name' && styles.sortBtnTextActive]}>
+              {sortLabel('name')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.sortBtn, sortField === 'status' && styles.sortBtnActive]}
+            onPress={() => toggleSort('status')}
+          >
+            <Text style={[styles.sortBtnText, sortField === 'status' && styles.sortBtnTextActive]}>
+              {sortLabel('status')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => router.push(`/account/add?barangayId=${id}&barangayName=${encodeURIComponent(name ?? '')}`)}
+        >
+          <Text style={styles.addBtnText}>+ Add</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchWrap}>
+        <TextInput
+          style={styles.search}
+          placeholder="Search account..."
+          placeholderTextColor={Colors.textMuted}
+          value={query}
+          onChangeText={setQuery}
+          clearButtonMode="while-editing"
+        />
+      </View>
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(a) => String(a.id)}
+        renderItem={({ item }) => (
+          <AccountRow
+            account={item}
+            onPress={() => router.push(`/account/${item.id}`)}
+            onLongPress={() => handleMarkNoReading(item)}
+          />
+        )}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>No accounts found.</Text>
+          </View>
+        }
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  counters: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  chip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.md,
+    gap: 2,
+  },
+  chipNum: { fontSize: FontSize.xl, fontWeight: '800' },
+  chipLabel: { fontSize: FontSize.xs, fontWeight: '600' },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  sortRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  sortLabel: { fontSize: FontSize.sm, color: Colors.textMuted, fontWeight: '600' },
+  sortBtn: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sortBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  sortBtnText: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: '600' },
+  sortBtnTextActive: { color: '#fff' },
+  addBtn: {
+    backgroundColor: Colors.accent,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm - 2,
+  },
+  addBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.sm },
+  searchWrap: {
+    padding: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  search: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  empty: { padding: Spacing.xl, alignItems: 'center' },
+  emptyText: { fontSize: FontSize.md, color: Colors.textMuted },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\reading\[id].tsx ===
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  Alert,
+  Modal,
+  Pressable,
+} from 'react-native';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import {
+  getAccount,
+  getReadingsForAccount,
+  saveReading,
+  currentMonth,
+  getSetting,
+} from '../../db/queries';
+import { Account, ReadingRemark } from '../../types';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+const REMARKS: ReadingRemark[] = [
+  'No issue',
+  'Blurred meter',
+  'No occupant',
+  'High consumption',
+  'No reading',
+];
+
+const REMARK_COLORS: Record<ReadingRemark, string> = {
+  'No issue': Colors.green,
+  'Blurred meter': Colors.orange,
+  'No occupant': Colors.orange,
+  'High consumption': Colors.red,
+  'No reading': Colors.gray,
+};
+
+function generateMonthOptions(): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return months;
+}
+
+function monthLabel(m: string): string {
+  const [y, mo] = m.split('-');
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
+}
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+export default function ReadingEntryScreen() {
+  const { id, month: monthParam } = useLocalSearchParams<{ id: string; month?: string }>();
+  const router = useRouter();
+
+  const [account, setAccount] = useState<Account | null>(null);
+  const [presentValue, setPresentValue] = useState('');
+  const [remark, setRemark] = useState<ReadingRemark>('No issue');
+  const [notes, setNotes] = useState('');
+  const [readerName, setReaderName] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  // Month selection
+  const monthOptions = generateMonthOptions();
+  const [selectedMonth, setSelectedMonth] = useState(monthParam ?? currentMonth());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+
+  // Date selection
+  const [recordedDate, setRecordedDate] = useState(new Date().toISOString());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [tempDay, setTempDay] = useState(String(new Date().getDate()));
+  const [tempMonth, setTempMonth] = useState(String(new Date().getMonth() + 1));
+  const [tempYear, setTempYear] = useState(String(new Date().getFullYear()));
+
+  const load = useCallback(() => {
+    const a = getAccount(Number(id));
+    setAccount(a);
+
+    // Auto-fill reader name from settings
+    const savedReader = getSetting('reader_name');
+    if (savedReader) setReaderName(savedReader);
+
+    // Pre-fill if existing reading for selected month
+    const readings = getReadingsForAccount(Number(id));
+    const existing = readings.find((r) => r.month === selectedMonth);
+    if (existing) {
+      setPresentValue(existing.presentReading != null ? String(existing.presentReading) : '');
+      setRemark(existing.remark ?? 'No issue');
+      setNotes(existing.notes ?? '');
+      if (existing.recordedBy) setReaderName(existing.recordedBy);
+      if (existing.dateRecorded) setRecordedDate(existing.dateRecorded);
+    }
+  }, [id, selectedMonth]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  if (!account) return null;
+
+  const prev = account.previousReading;
+  const present = parseFloat(presentValue);
+  const consumption = !isNaN(present) && prev !== null ? present - prev : null;
+  const isHighConsumption = consumption !== null && consumption > 50;
+
+  function numpadPress(key: string) {
+    if (key === '⌫') {
+      setPresentValue((v) => v.slice(0, -1));
+    } else if (key === '.') {
+      if (!presentValue.includes('.')) setPresentValue((v) => v + '.');
+    } else {
+      setPresentValue((v) => (v.length < 8 ? v + key : v));
+    }
+  }
+
+  function applyDatePicker() {
+    const d = new Date(Number(tempYear), Number(tempMonth) - 1, Number(tempDay));
+    if (isNaN(d.getTime())) {
+      Alert.alert('Invalid date', 'Please enter a valid date.');
+      return;
+    }
+    setRecordedDate(d.toISOString());
+    setShowDatePicker(false);
+  }
+
+  function handleSave() {
+    if (
+      remark !== 'No reading' &&
+      remark !== 'No occupant' &&
+      remark !== 'Blurred meter' &&
+      presentValue === ''
+    ) {
+      Alert.alert('Missing reading', 'Enter the meter reading or choose a remark like "No reading".');
+      return;
+    }
+
+    const presentNum = presentValue !== '' ? parseFloat(presentValue) : null;
+    if (presentNum !== null && prev !== null && presentNum < prev) {
+      Alert.alert(
+        'Reading is lower than previous',
+        `Previous: ${prev} m³. Present: ${presentNum} m³.\nThis may indicate a meter reset. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save anyway', onPress: () => doSave(presentNum) },
+        ]
+      );
+      return;
+    }
+
+    doSave(presentNum);
+  }
+
+  function doSave(presentNum: number | null) {
+    const cons = presentNum !== null && prev !== null ? presentNum - prev : null;
+    const finalRemark: ReadingRemark =
+      isHighConsumption && remark === 'No issue' ? 'High consumption' : remark;
+
+    saveReading({
+      accountId: Number(id),
+      month: selectedMonth,
+      previousReading: prev,
+      presentReading: presentNum,
+      consumption: cons,
+      remark: finalRemark,
+      notes: notes.trim() || null,
+      recordedBy: readerName.trim() || null,
+      dateRecorded: recordedDate,
+    });
+
+    setSaved(true);
+    setTimeout(() => router.back(), 600);
+  }
+
+  const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* Subscriber name */}
+      <View style={styles.subHeader}>
+        <Text style={styles.subName}>{account.subscriberName}</Text>
+        <Text style={styles.subBarangay}>{account.barangayName}</Text>
+      </View>
+
+      {/* Month selector */}
+      <View>
+        <Text style={styles.sectionLabel}>Reading Month</Text>
+        <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowMonthPicker(true)}>
+          <Text style={styles.pickerBtnText}>{monthLabel(selectedMonth)}</Text>
+          <Text style={styles.pickerChevron}>▾</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Previous vs present display */}
+      <View style={styles.readingDisplay}>
+        <View style={styles.readingBox}>
+          <Text style={styles.readingBoxLabel}>Previous</Text>
+          <Text style={styles.readingBoxValue}>{prev ?? '—'}</Text>
+          <Text style={styles.readingBoxUnit}>m³</Text>
+        </View>
+        <View style={styles.arrow}>
+          <Text style={styles.arrowText}>→</Text>
+        </View>
+        <View style={[styles.readingBox, styles.presentBox]}>
+          <Text style={styles.readingBoxLabel}>Present</Text>
+          <Text style={[styles.readingBoxValue, styles.presentValue]}>
+            {presentValue || '—'}
+          </Text>
+          <Text style={styles.readingBoxUnit}>m³</Text>
+        </View>
+      </View>
+
+      {/* Consumption */}
+      {consumption !== null && (
+        <View
+          style={[
+            styles.consumptionBadge,
+            isHighConsumption ? styles.consumptionHigh : styles.consumptionNormal,
+          ]}
+        >
+          <Text style={[styles.consumptionText, isHighConsumption && { color: Colors.red }]}>
+            {isHighConsumption ? '⚠️  ' : '✓  '}Consumption: {consumption} m³
+            {isHighConsumption ? '  – HIGH' : ''}
+          </Text>
+        </View>
+      )}
+
+      {/* Numpad */}
+      <View style={styles.numpad}>
+        {numpadKeys.map((k) => (
+          <TouchableOpacity
+            key={k}
+            style={[styles.numKey, k === '⌫' && styles.numKeyDelete]}
+            onPress={() => numpadPress(k)}
+            activeOpacity={0.6}
+          >
+            <Text style={[styles.numKeyText, k === '⌫' && { color: Colors.red }]}>{k}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Remarks */}
+      <Text style={styles.sectionLabel}>Remark</Text>
+      <View style={styles.remarkGrid}>
+        {REMARKS.map((r) => (
+          <TouchableOpacity
+            key={r}
+            style={[
+              styles.remarkChip,
+              remark === r && { backgroundColor: REMARK_COLORS[r], borderColor: REMARK_COLORS[r] },
+            ]}
+            onPress={() => setRemark(r)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.remarkText, remark === r && { color: '#fff' }]}>{r}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Reading date */}
+      <Text style={styles.sectionLabel}>Reading Date</Text>
+      <TouchableOpacity style={styles.pickerBtn} onPress={() => {
+        const d = new Date(recordedDate);
+        setTempDay(String(d.getDate()));
+        setTempMonth(String(d.getMonth() + 1));
+        setTempYear(String(d.getFullYear()));
+        setShowDatePicker(true);
+      }}>
+        <Text style={styles.pickerBtnText}>📅  {formatDateLabel(recordedDate)}</Text>
+        <Text style={styles.pickerChevron}>▾</Text>
+      </TouchableOpacity>
+
+      {/* Reader name */}
+      <Text style={styles.sectionLabel}>Meter Reader</Text>
+      <TextInput
+        style={styles.textInput}
+        placeholder="Name of reader..."
+        placeholderTextColor={Colors.textMuted}
+        value={readerName}
+        onChangeText={setReaderName}
+      />
+
+      {/* Notes */}
+      <Text style={styles.sectionLabel}>Notes (optional)</Text>
+      <TextInput
+        style={[styles.textInput, styles.notesInput]}
+        placeholder="Any additional notes..."
+        placeholderTextColor={Colors.textMuted}
+        value={notes}
+        onChangeText={setNotes}
+        multiline
+        numberOfLines={3}
+        textAlignVertical="top"
+      />
+
+      {/* Save button */}
+      <TouchableOpacity
+        style={[styles.saveBtn, saved && styles.saveBtnDone]}
+        onPress={handleSave}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.saveBtnText}>
+          {saved ? '✓  Saved!' : 'Save Reading'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Month picker modal */}
+      <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowMonthPicker(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Select Reading Month</Text>
+          {monthOptions.map((m) => (
+            <TouchableOpacity
+              key={m}
+              style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
+              onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+            >
+              <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
+                {monthLabel(m)}
+              </Text>
+              {m === selectedMonth && <Text style={styles.checkmark}>✓</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
+
+      {/* Date picker modal */}
+      <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
+        <Pressable style={styles.overlay} onPress={() => setShowDatePicker(false)} />
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Select Reading Date</Text>
+          <View style={styles.dateRow}>
+            <View style={styles.dateField}>
+              <Text style={styles.dateFieldLabel}>Month</Text>
+              <TextInput
+                style={styles.dateInput}
+                value={tempMonth}
+                onChangeText={setTempMonth}
+                keyboardType="numeric"
+                maxLength={2}
+                placeholder="MM"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+            <View style={styles.dateField}>
+              <Text style={styles.dateFieldLabel}>Day</Text>
+              <TextInput
+                style={styles.dateInput}
+                value={tempDay}
+                onChangeText={setTempDay}
+                keyboardType="numeric"
+                maxLength={2}
+                placeholder="DD"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+            <View style={styles.dateField}>
+              <Text style={styles.dateFieldLabel}>Year</Text>
+              <TextInput
+                style={styles.dateInput}
+                value={tempYear}
+                onChangeText={setTempYear}
+                keyboardType="numeric"
+                maxLength={4}
+                placeholder="YYYY"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+          </View>
+          <TouchableOpacity style={styles.applyDateBtn} onPress={applyDatePicker}>
+            <Text style={styles.applyDateBtnText}>Set Date</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.md, gap: Spacing.md, paddingBottom: Spacing.xxl },
+
+  subHeader: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 2,
+  },
+  subName: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary },
+  subBarangay: { fontSize: FontSize.sm, color: Colors.textMuted },
+
+  pickerBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pickerBtnText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.primary },
+  pickerChevron: { fontSize: FontSize.lg, color: Colors.textMuted },
+
+  readingDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  readingBox: { flex: 1, alignItems: 'center', gap: 2 },
+  presentBox: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+  },
+  readingBoxLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase' },
+  readingBoxValue: { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.textPrimary },
+  presentValue: { color: Colors.primary },
+  readingBoxUnit: { fontSize: FontSize.sm, color: Colors.textMuted },
+  arrow: { paddingHorizontal: Spacing.xs },
+  arrowText: { fontSize: FontSize.xl, color: Colors.textMuted },
+
+  consumptionBadge: {
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderWidth: 1,
+  },
+  consumptionNormal: { backgroundColor: Colors.greenLight, borderColor: Colors.green },
+  consumptionHigh: { backgroundColor: Colors.redLight, borderColor: Colors.red },
+  consumptionText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.green, textAlign: 'center' },
+
+  numpad: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  numKey: {
+    width: '30%',
+    aspectRatio: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  numKeyDelete: { backgroundColor: Colors.redLight, borderColor: Colors.red },
+  numKeyText: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary },
+
+  sectionLabel: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textSecondary, textTransform: 'uppercase' },
+  remarkGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  remarkChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  remarkText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary },
+
+  textInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+  },
+  notesInput: { minHeight: 80 },
+
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md + 4,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  saveBtnDone: { backgroundColor: Colors.green },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: FontSize.lg },
+
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.lg,
+    borderTopRightRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  sheetHandle: {
+    width: 40, height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: Radius.full,
+    alignSelf: 'center',
+    marginBottom: Spacing.sm,
+  },
+  sheetTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary, marginBottom: Spacing.sm },
+  monthOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  monthOptionActive: { backgroundColor: Colors.surfaceAlt },
+  monthOptionText: { fontSize: FontSize.md, color: Colors.textPrimary },
+  monthOptionTextActive: { fontWeight: '700', color: Colors.primary },
+  checkmark: { color: Colors.green, fontWeight: '700', fontSize: FontSize.md },
+
+  dateRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.sm },
+  dateField: { flex: 1, gap: Spacing.xs },
+  dateFieldLabel: { fontSize: FontSize.xs, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', textAlign: 'center' },
+  dateInput: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    fontSize: FontSize.lg,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  applyDateBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  applyDateBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\settings\index.tsx ===
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { getSetting, setSetting } from '../../db/queries';
+import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+export default function SettingsScreen() {
+  const router = useRouter();
+  const [readerName, setReaderName] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      const name = getSetting('reader_name');
+      setReaderName(name ?? '');
+    }, [])
+  );
+
+  function handleSave() {
+    if (!readerName.trim()) {
+      Alert.alert('Name required', 'Please enter the reader name.');
+      return;
+    }
+    setSetting('reader_name', readerName.trim());
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      router.back();
+    }, 800);
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Reader Name</Text>
+        <Text style={styles.cardBody}>
+          This name will appear on the home screen header and will be included in exported Excel filenames.
+        </Text>
+        <TextInput
+          style={styles.textInput}
+          value={readerName}
+          onChangeText={(t) => { setReaderName(t); setSaved(false); }}
+          placeholder="e.g. Juan dela Cruz"
+          placeholderTextColor={Colors.textMuted}
+          autoCapitalize="words"
+        />
+        <TouchableOpacity
+          style={[styles.saveBtn, saved && styles.saveBtnDone]}
+          onPress={handleSave}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.saveBtnText}>
+            {saved ? '✓  Saved!' : 'Save'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>ℹ️  How it's used</Text>
+        <Text style={styles.infoItem}>• Home screen header shows the reader name</Text>
+        <Text style={styles.infoItem}>• Exported files are named: <Text style={styles.code}>ReaderName_Barangay_Month.xlsx</Text></Text>
+        <Text style={styles.infoItem}>• Reading form auto-fills the "Meter Reader" field</Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: Spacing.md, gap: Spacing.md },
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  cardBody: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
+  textInput: {
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    fontSize: FontSize.lg,
+    color: Colors.textPrimary,
+    fontWeight: '600',
+  },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: Spacing.md,
+    alignItems: 'center',
+  },
+  saveBtnDone: { backgroundColor: Colors.green },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: FontSize.md },
+  infoCard: {
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  infoTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
+  infoItem: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
+  code: { fontFamily: 'monospace', color: Colors.primary, fontWeight: '600' },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\app\_layout.tsx ===
+import { useEffect } from 'react';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { initDb } from '../db/schema';
+import { Colors } from '../constants/theme';
+
+export default function RootLayout() {
+  useEffect(() => {
+    initDb();
+  }, []);
+
+  return (
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: Colors.primary },
+          headerTintColor: '#fff',
+          headerTitleStyle: { fontWeight: '700' },
+          contentStyle: { backgroundColor: Colors.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="barangay/[id]" options={{ title: 'Accounts' }} />
+        <Stack.Screen name="account/[id]" options={{ title: 'Account Detail' }} />
+        <Stack.Screen name="reading/[id]" options={{ title: 'Add Reading' }} />
+        <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
+        <Stack.Screen name="account/add" options={{ title: 'Add Account' }} />
+      </Stack>
+    </>
+  );
+}
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\components\AccountRow.tsx ===
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Account } from '../types';
+import { Colors, Spacing, FontSize, Radius } from '../constants/theme';
+import StatusDot from './StatusDot';
+
+interface Props {
+  account: Account;
+  onPress: () => void;
+  onLongPress?: () => void;
+}
+
+const typeBadgeColor: Record<string, string> = {
+  Residential: Colors.primaryLight,
+  Commercial: Colors.accent,
+};
+
+export default function AccountRow({ account, onPress, onLongPress }: Props) {
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={0.7}
+    >
+      <StatusDot status={account.currentMonthStatus} size={12} />
+      <View style={styles.info}>
+        <Text style={styles.name} numberOfLines={1}>
+          {account.subscriberName}
+        </Text>
+        <View style={styles.meta}>
+          <View style={[styles.badge, { backgroundColor: typeBadgeColor[account.type] ?? Colors.gray }]}>
+            <Text style={styles.badgeText}>{account.type}</Text>
+          </View>
+          {account.previousReading !== null && (
+            <Text style={styles.reading}>Prev: {account.previousReading} m³</Text>
+          )}
+        </View>
+      </View>
+      <Text style={styles.arrow}>›</Text>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  info: { flex: 1, gap: 4 },
+  name: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.full },
+  badgeText: { fontSize: FontSize.xs, color: '#fff', fontWeight: '600' },
+  reading: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  arrow: { fontSize: 20, color: Colors.textMuted },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\components\BarangayRow.tsx ===
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Barangay } from '../types';
+import { Colors, Spacing, FontSize, Radius } from '../constants/theme';
+
+interface Props {
+  barangay: Barangay;
+  onPress: () => void;
+}
+
+function progressLabel(b: Barangay): string {
+  if (b.totalAccounts === 0) return 'Empty';
+  if (b.doneCount === 0) return 'Not started';
+  if (b.doneCount >= b.totalAccounts) return 'Done';
+  return 'In progress';
+}
+
+function progressColor(b: Barangay): string {
+  if (b.totalAccounts === 0) return Colors.gray;
+  if (b.doneCount === 0) return Colors.gray;
+  if (b.doneCount >= b.totalAccounts) return Colors.green;
+  return Colors.orange;
+}
+
+export default function BarangayRow({ barangay, onPress }: Props) {
+  const label = progressLabel(barangay);
+  const color = progressColor(barangay);
+  const pct = barangay.totalAccounts > 0
+    ? Math.round((barangay.doneCount / barangay.totalAccounts) * 100)
+    : 0;
+
+  return (
+    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.left}>
+        <Text style={styles.name}>{barangay.name}</Text>
+        <View style={styles.counters}>
+          <Text style={styles.counter}>{barangay.totalAccounts} accounts</Text>
+          {barangay.issueCount > 0 && (
+            <Text style={[styles.counter, { color: Colors.orange }]}>
+              {barangay.issueCount} issues
+            </Text>
+          )}
+          <Text style={[styles.counter, { color: Colors.textMuted }]}>
+            {barangay.pendingCount} pending
+          </Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+        </View>
+      </View>
+      <View style={styles.right}>
+        <View style={[styles.statusBadge, { backgroundColor: color }]}>
+          <Text style={styles.statusText}>{label}</Text>
+        </View>
+        <Text style={styles.arrow}>›</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: Spacing.md,
+  },
+  left: { flex: 1, gap: 4 },
+  name: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
+  counters: { flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' },
+  counter: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  progressTrack: {
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: Radius.full,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  progressFill: { height: 4, borderRadius: Radius.full },
+  right: { alignItems: 'center', gap: 4 },
+  statusBadge: { paddingHorizontal: Spacing.sm, paddingVertical: 3, borderRadius: Radius.full },
+  statusText: { fontSize: FontSize.xs, color: '#fff', fontWeight: '600' },
+  arrow: { fontSize: 20, color: Colors.textMuted },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\components\StatusDot.tsx ===
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import { StatusColor } from '../types';
+import { Colors } from '../constants/theme';
+
+const colorMap: Record<StatusColor, string> = {
+  green: Colors.green,
+  orange: Colors.orange,
+  red: Colors.red,
+  gray: Colors.gray,
+};
+
+interface Props {
+  status: StatusColor;
+  size?: number;
+}
+
+export default function StatusDot({ status, size = 10 }: Props) {
+  return (
+    <View
+      style={[
+        styles.dot,
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: colorMap[status] },
+      ]}
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  dot: { flexShrink: 0 },
+});
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\constants\theme.ts ===
+export const Colors = {
+  primary: '#1B4F72',
+  primaryLight: '#2E86C1',
+  primaryDark: '#154360',
+  accent: '#17A589',
+  accentLight: '#1ABC9C',
+  background: '#F0F4F8',
+  surface: '#FFFFFF',
+  surfaceAlt: '#EBF5FB',
+  border: '#D5E8F4',
+  textPrimary: '#1A2530',
+  textSecondary: '#5D7180',
+  textMuted: '#8FA8B8',
+
+  // Status colors
+  green: '#27AE60',
+  greenLight: '#EAFAF1',
+  orange: '#E67E22',
+  orangeLight: '#FEF5EC',
+  red: '#E74C3C',
+  redLight: '#FDEDEC',
+  gray: '#95A5A6',
+  grayLight: '#F2F3F4',
+} as const;
+
+export const Spacing = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+  xxl: 48,
+} as const;
+
+export const FontSize = {
+  xs: 11,
+  sm: 13,
+  md: 15,
+  lg: 18,
+  xl: 22,
+  xxl: 28,
+} as const;
+
+export const Radius = {
+  sm: 6,
+  md: 10,
+  lg: 16,
+  full: 999,
+} as const;
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\db\queries.ts ===
+import { getDb } from './schema';
+import { Account, Barangay, Reading, ImportLog, StatusColor } from '../types';
+
+// --- Settings -----------------------------------------------------------
+export function getSetting(key: string): string | null {
+  const db = getDb();
+  const row = db.getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string): void {
+  const db = getDb();
+  db.runSync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+}
+
+// --- Month helpers -------------------------------------------------------
+export function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+// --- Barangays -----------------------------------------------------------
+export function getAllBarangays(): Barangay[] {
+  const db = getDb();
+  const month = currentMonth();
+
+  const rows = db.getAllSync<{
+    id: number;
+    name: string;
+    total: number;
+    done: number;
+    issues: number;
+  }>(`
+    SELECT
+      b.id,
+      b.name,
+      COUNT(a.id) AS total,
+      COUNT(r.id) AS done,
+      SUM(
+        CASE WHEN r.remark IN ('Blurred meter','No occupant','No reading','High consumption')
+          OR (r.consumption IS NOT NULL AND r.consumption > 50)
+        THEN 1 ELSE 0 END
+      ) AS issues
+    FROM barangays b
+    LEFT JOIN accounts a ON a.barangay_id = b.id
+    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
+    GROUP BY b.id
+    ORDER BY b.name
+  `, [month]);
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    totalAccounts: r.total,
+    doneCount: r.done,
+    issueCount: r.issues,
+    pendingCount: r.total - r.done,
+  }));
+}
+
+// --- Accounts ------------------------------------------------------------
+function deriveStatus(remark: string | null, hasReading: boolean, consumption: number | null): StatusColor {
+  if (!hasReading) return 'gray';
+  if (remark === 'Blurred meter' || remark === 'No occupant' || remark === 'No reading') return 'orange';
+  if (remark === 'High consumption' || (consumption !== null && consumption > 50)) return 'red';
+  return 'green';
+}
+
+export type SortField = 'name' | 'status';
+export type SortDir = 'asc' | 'desc';
+
+export function getAccountsByBarangay(
+  barangayId: number,
+  sortField: SortField = 'name',
+  sortDir: SortDir = 'asc'
+): Account[] {
+  const db = getDb();
+  const month = currentMonth();
+
+  const orderClause =
+    sortField === 'status'
+      ? `has_reading ${sortDir}, a.subscriber_name ASC`
+      : `a.subscriber_name ${sortDir}`;
+
+  const rows = db.getAllSync<{
+    id: number;
+    barangay_id: number;
+    barangay_name: string;
+    subscriber_name: string;
+    type: string;
+    line_status: string;
+    meter_status: string;
+    year_last_payment: string | null;
+    month_last_payment: string | null;
+    remaining_balance: number | null;
+    previous_reading: number | null;
+    remark: string | null;
+    consumption: number | null;
+    has_reading: number;
+  }>(`
+    SELECT
+      a.*,
+      b.name AS barangay_name,
+      r.remark,
+      r.consumption,
+      CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
+    FROM accounts a
+    JOIN barangays b ON b.id = a.barangay_id
+    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
+    WHERE a.barangay_id = ?
+    ORDER BY ${orderClause}
+  `, [month, barangayId]);
+
+  return rows.map((r) => ({
+    id: r.id,
+    barangayId: r.barangay_id,
+    barangayName: r.barangay_name,
+    subscriberName: r.subscriber_name,
+    type: r.type as Account['type'],
+    lineStatus: r.line_status as Account['lineStatus'],
+    meterStatus: r.meter_status as Account['meterStatus'],
+    yearLastPayment: r.year_last_payment,
+    monthLastPayment: r.month_last_payment,
+    remainingBalance: r.remaining_balance,
+    previousReading: r.previous_reading,
+    currentMonthStatus: deriveStatus(r.remark, !!r.has_reading, r.consumption),
+  }));
+}
+
+export function searchAllAccounts(query: string): Account[] {
+  const db = getDb();
+  const month = currentMonth();
+
+  const rows = db.getAllSync<{
+    id: number;
+    barangay_id: number;
+    barangay_name: string;
+    subscriber_name: string;
+    type: string;
+    line_status: string;
+    meter_status: string;
+    year_last_payment: string | null;
+    month_last_payment: string | null;
+    remaining_balance: number | null;
+    previous_reading: number | null;
+    remark: string | null;
+    consumption: number | null;
+    has_reading: number;
+  }>(`
+    SELECT
+      a.*,
+      b.name AS barangay_name,
+      r.remark,
+      r.consumption,
+      CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
+    FROM accounts a
+    JOIN barangays b ON b.id = a.barangay_id
+    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
+    WHERE a.subscriber_name LIKE ?
+    ORDER BY a.subscriber_name ASC
+  `, [month, `%${query}%`]);
+
+  return rows.map((r) => ({
+    id: r.id,
+    barangayId: r.barangay_id,
+    barangayName: r.barangay_name,
+    subscriberName: r.subscriber_name,
+    type: r.type as Account['type'],
+    lineStatus: r.line_status as Account['lineStatus'],
+    meterStatus: r.meter_status as Account['meterStatus'],
+    yearLastPayment: r.year_last_payment,
+    monthLastPayment: r.month_last_payment,
+    remainingBalance: r.remaining_balance,
+    previousReading: r.previous_reading,
+    currentMonthStatus: deriveStatus(r.remark, !!r.has_reading, r.consumption),
+  }));
+}
+
+export function getAccount(accountId: number): Account | null {
+  const db = getDb();
+  const row = db.getFirstSync<{
+    id: number;
+    barangay_id: number;
+    barangay_name: string;
+    subscriber_name: string;
+    type: string;
+    line_status: string;
+    meter_status: string;
+    year_last_payment: string | null;
+    month_last_payment: string | null;
+    remaining_balance: number | null;
+    previous_reading: number | null;
+  }>(`
+    SELECT a.*, b.name AS barangay_name
+    FROM accounts a
+    JOIN barangays b ON b.id = a.barangay_id
+    WHERE a.id = ?
+  `, [accountId]);
+
+  if (!row) return null;
+
+  return {
+    id: row.id,
+    barangayId: row.barangay_id,
+    barangayName: row.barangay_name,
+    subscriberName: row.subscriber_name,
+    type: row.type as Account['type'],
+    lineStatus: row.line_status as Account['lineStatus'],
+    meterStatus: row.meter_status as Account['meterStatus'],
+    yearLastPayment: row.year_last_payment,
+    monthLastPayment: row.month_last_payment,
+    remainingBalance: row.remaining_balance,
+    previousReading: row.previous_reading,
+    currentMonthStatus: 'gray',
+  };
+}
+
+export function updateAccountStatus(accountId: number, lineStatus: string, meterStatus: string): void {
+  const db = getDb();
+  db.runSync('UPDATE accounts SET line_status = ?, meter_status = ? WHERE id = ?', [lineStatus, meterStatus, accountId]);
+}
+
+export function updateAccountDetails(accountId: number, params: {
+  subscriberName: string;
+  lineStatus: string;
+  meterStatus: string;
+  previousReading: number | null;
+}): void {
+  const db = getDb();
+  db.runSync(
+    'UPDATE accounts SET subscriber_name = ?, line_status = ?, meter_status = ?, previous_reading = ? WHERE id = ?',
+    [params.subscriberName, params.lineStatus, params.meterStatus, params.previousReading, accountId]
+  );
+}
+
+export function createAccount(params: {
+  barangayId: number;
+  subscriberName: string;
+  type: string;
+  lineStatus: string;
+  meterStatus: string;
+}): number {
+  const db = getDb();
+  db.runSync(
+    'INSERT INTO accounts (barangay_id, subscriber_name, type, line_status, meter_status) VALUES (?, ?, ?, ?, ?)',
+    [params.barangayId, params.subscriberName, params.type, params.lineStatus, params.meterStatus]
+  );
+  const row = db.getFirstSync<{ id: number }>('SELECT last_insert_rowid() AS id');
+  return row!.id;
+}
+
+export function deleteAccount(accountId: number): void {
+  const db = getDb();
+  db.runSync('DELETE FROM readings WHERE account_id = ?', [accountId]);
+  db.runSync('DELETE FROM accounts WHERE id = ?', [accountId]);
+}
+
+export function getAllBarangayNames(): { id: number; name: string }[] {
+  const db = getDb();
+  return db.getAllSync<{ id: number; name: string }>('SELECT id, name FROM barangays ORDER BY name');
+}
+
+export function createBarangay(name: string): number {
+  const db = getDb();
+  db.runSync('INSERT OR IGNORE INTO barangays (name) VALUES (?)', [name]);
+  const row = db.getFirstSync<{ id: number }>('SELECT id FROM barangays WHERE name = ?', [name]);
+  return row!.id;
+}
+
+// --- Readings ------------------------------------------------------------
+export function getReadingsForAccount(accountId: number): Reading[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    id: number;
+    account_id: number;
+    month: string;
+    previous_reading: number | null;
+    present_reading: number | null;
+    consumption: number | null;
+    remark: string | null;
+    notes: string | null;
+    recorded_by: string | null;
+    date_recorded: string | null;
+  }>('SELECT * FROM readings WHERE account_id = ? ORDER BY month DESC', [accountId]);
+
+  return rows.map((r) => ({
+    id: r.id,
+    accountId: r.account_id,
+    month: r.month,
+    previousReading: r.previous_reading,
+    presentReading: r.present_reading,
+    consumption: r.consumption,
+    remark: r.remark as Reading['remark'],
+    notes: r.notes,
+    recordedBy: r.recorded_by,
+    dateRecorded: r.date_recorded,
+  }));
+}
+
+export function getReading(readingId: number): Reading | null {
+  const db = getDb();
+  const r = db.getFirstSync<{
+    id: number;
+    account_id: number;
+    month: string;
+    previous_reading: number | null;
+    present_reading: number | null;
+    consumption: number | null;
+    remark: string | null;
+    notes: string | null;
+    recorded_by: string | null;
+    date_recorded: string | null;
+  }>('SELECT * FROM readings WHERE id = ?', [readingId]);
+
+  if (!r) return null;
+
+  return {
+    id: r.id,
+    accountId: r.account_id,
+    month: r.month,
+    previousReading: r.previous_reading,
+    presentReading: r.present_reading,
+    consumption: r.consumption,
+    remark: r.remark as Reading['remark'],
+    notes: r.notes,
+    recordedBy: r.recorded_by,
+    dateRecorded: r.date_recorded,
+  };
+}
+
+export function saveReading(params: {
+  accountId: number;
+  month: string;
+  previousReading: number | null;
+  presentReading: number | null;
+  consumption: number | null;
+  remark: Reading['remark'];
+  notes: string | null;
+  recordedBy: string | null;
+  dateRecorded?: string | null;
+}): void {
+  const db = getDb();
+  const now = params.dateRecorded ?? new Date().toISOString();
+
+  db.runSync(`
+    INSERT INTO readings (account_id, month, previous_reading, present_reading, consumption, remark, notes, recorded_by, date_recorded)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, month) DO UPDATE SET
+      previous_reading = excluded.previous_reading,
+      present_reading = excluded.present_reading,
+      consumption = excluded.consumption,
+      remark = excluded.remark,
+      notes = excluded.notes,
+      recorded_by = excluded.recorded_by,
+      date_recorded = excluded.date_recorded
+  `, [
+    params.accountId,
+    params.month,
+    params.previousReading,
+    params.presentReading,
+    params.consumption,
+    params.remark,
+    params.notes,
+    params.recordedBy,
+    now,
+  ]);
+
+  if (params.presentReading !== null) {
+    db.runSync('UPDATE accounts SET previous_reading = ? WHERE id = ?', [params.presentReading, params.accountId]);
+  }
+}
+
+export function deleteReading(accountId: number, month: string): void {
+  const db = getDb();
+  db.runSync('DELETE FROM readings WHERE account_id = ? AND month = ?', [accountId, month]);
+}
+
+export function markNoReading(accountId: number, month: string, recordedBy: string | null): void {
+  const db = getDb();
+  const prev = db.getFirstSync<{ previous_reading: number | null }>(
+    'SELECT previous_reading FROM accounts WHERE id = ?', [accountId]
+  );
+  saveReading({
+    accountId,
+    month,
+    previousReading: prev?.previous_reading ?? null,
+    presentReading: null,
+    consumption: null,
+    remark: 'No reading',
+    notes: null,
+    recordedBy,
+  });
+}
+
+// --- Import --------------------------------------------------------------
+export function upsertBarangay(name: string): number {
+  const db = getDb();
+  db.runSync('INSERT OR IGNORE INTO barangays (name) VALUES (?)', [name]);
+  const row = db.getFirstSync<{ id: number }>('SELECT id FROM barangays WHERE name = ?', [name]);
+  return row!.id;
+}
+
+export function upsertAccount(params: {
+  barangayId: number;
+  subscriberName: string;
+  type: string;
+  lineStatus: string;
+  meterStatus: string;
+  yearLastPayment: string | null;
+  monthLastPayment: string | null;
+  remainingBalance: number | null;
+  previousReading: number | null;
+}): number {
+  const db = getDb();
+  db.runSync(`
+    INSERT INTO accounts
+      (barangay_id, subscriber_name, type, line_status, meter_status, year_last_payment, month_last_payment, remaining_balance, previous_reading)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT DO NOTHING
+  `, [
+    params.barangayId,
+    params.subscriberName,
+    params.type,
+    params.lineStatus,
+    params.meterStatus,
+    params.yearLastPayment,
+    params.monthLastPayment,
+    params.remainingBalance,
+    params.previousReading,
+  ]);
+
+  const row = db.getFirstSync<{ id: number }>(
+    'SELECT id FROM accounts WHERE barangay_id = ? AND subscriber_name = ?',
+    [params.barangayId, params.subscriberName]
+  );
+  return row!.id;
+}
+
+export function updateAccountFields(accountId: number, params: {
+  lineStatus?: string;
+  meterStatus?: string;
+  yearLastPayment?: string | null;
+  monthLastPayment?: string | null;
+  remainingBalance?: number | null;
+  previousReading?: number | null;
+}): void {
+  const db = getDb();
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+
+  if (params.lineStatus !== undefined) { sets.push('line_status = ?'); vals.push(params.lineStatus); }
+  if (params.meterStatus !== undefined) { sets.push('meter_status = ?'); vals.push(params.meterStatus); }
+  if (params.yearLastPayment !== undefined) { sets.push('year_last_payment = ?'); vals.push(params.yearLastPayment); }
+  if (params.monthLastPayment !== undefined) { sets.push('month_last_payment = ?'); vals.push(params.monthLastPayment); }
+  if (params.remainingBalance !== undefined) { sets.push('remaining_balance = ?'); vals.push(params.remainingBalance); }
+  if (params.previousReading !== undefined) { sets.push('previous_reading = ?'); vals.push(params.previousReading); }
+
+  if (sets.length === 0) return;
+  vals.push(accountId);
+  db.runSync(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, vals);
+}
+
+export function logImport(filename: string, accountsLoaded: number): void {
+  const db = getDb();
+  db.runSync(
+    'INSERT INTO import_log (filename, imported_at, accounts_loaded) VALUES (?, ?, ?)',
+    [filename, new Date().toISOString(), accountsLoaded]
+  );
+}
+
+export function getImportLog(): ImportLog[] {
+  const db = getDb();
+  return db.getAllSync<ImportLog>(
+    'SELECT id, filename, imported_at AS importedAt, accounts_loaded AS accountsLoaded FROM import_log ORDER BY imported_at DESC'
+  );
+}
+
+// --- Export --------------------------------------------------------------
+export interface ExportRow {
+  subscriberName: string;
+  type: string;
+  lineStatus: string;
+  meterStatus: string;
+  previousReading: number | null;
+  presentReading: number | null;
+  consumption: number | null;
+  remarks: string | null;
+  yearLastPayment: string | null;
+  monthLastPayment: string | null;
+  remainingBalance: number | null;
+}
+
+export function getExportData(barangayId: number, month: string): ExportRow[] {
+  const db = getDb();
+  const rows = db.getAllSync<{
+    subscriber_name: string;
+    type: string;
+    line_status: string;
+    meter_status: string;
+    previous_reading: number | null;
+    present_reading: number | null;
+    consumption: number | null;
+    remark: string | null;
+    year_last_payment: string | null;
+    month_last_payment: string | null;
+    remaining_balance: number | null;
+  }>(`
+    SELECT
+      a.subscriber_name, a.type, a.line_status, a.meter_status,
+      a.year_last_payment, a.month_last_payment, a.remaining_balance,
+      r.previous_reading, r.present_reading, r.consumption, r.remark
+    FROM accounts a
+    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
+    WHERE a.barangay_id = ?
+    ORDER BY a.subscriber_name
+  `, [month, barangayId]);
+
+  return rows.map((r) => ({
+    subscriberName: r.subscriber_name,
+    type: r.type,
+    lineStatus: r.line_status,
+    meterStatus: r.meter_status,
+    previousReading: r.previous_reading,
+    presentReading: r.present_reading,
+    consumption: r.consumption,
+    remarks: r.remark,
+    yearLastPayment: r.year_last_payment,
+    monthLastPayment: r.month_last_payment,
+    remainingBalance: r.remaining_balance,
+  }));
+}
+
+export function getAllBarangaysForExport(): { id: number; name: string }[] {
+  const db = getDb();
+  return db.getAllSync<{ id: number; name: string }>('SELECT id, name FROM barangays ORDER BY name');
+}
+
+// --- Stats ---------------------------------------------------------------
+export function getOverallProgress(month: string): { total: number; done: number } {
+  const db = getDb();
+  const row = db.getFirstSync<{ total: number; done: number }>(`
+    SELECT
+      COUNT(a.id) AS total,
+      COUNT(r.id) AS done
+    FROM accounts a
+    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
+  `, [month]);
+  return row ?? { total: 0, done: 0 };
+}
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\db\schema.ts ===
+import * as SQLite from 'expo-sqlite';
+
+let db: SQLite.SQLiteDatabase | null = null;
+
+export function getDb(): SQLite.SQLiteDatabase {
+  if (!db) {
+    db = SQLite.openDatabaseSync('waterworks.db');
+  }
+  return db;
+}
+
+export function initDb(): void {
+  const database = getDb();
+
+  database.execSync(`
+    CREATE TABLE IF NOT EXISTS barangays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE
+    );
+
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      barangay_id INTEGER NOT NULL,
+      subscriber_name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'Residential',
+      line_status TEXT NOT NULL DEFAULT 'Operational',
+      meter_status TEXT NOT NULL DEFAULT 'In-service',
+      year_last_payment TEXT,
+      month_last_payment TEXT,
+      remaining_balance REAL,
+      previous_reading REAL,
+      FOREIGN KEY (barangay_id) REFERENCES barangays(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS readings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER NOT NULL,
+      month TEXT NOT NULL,
+      previous_reading REAL,
+      present_reading REAL,
+      consumption REAL,
+      remark TEXT,
+      notes TEXT,
+      recorded_by TEXT,
+      date_recorded TEXT,
+      FOREIGN KEY (account_id) REFERENCES accounts(id),
+      UNIQUE(account_id, month)
+    );
+
+    CREATE TABLE IF NOT EXISTS import_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      accounts_loaded INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+}
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\types\index.ts ===
+export type LineStatus = 'Operational' | 'Disconnected' | 'No Occupant' | 'Temporary Closed';
+export type MeterStatus = 'In-service' | 'Blurred';
+export type AccountType = 'Residential' | 'Commercial';
+export type ReadingRemark =
+  | 'No issue'
+  | 'Blurred meter'
+  | 'No occupant'
+  | 'High consumption'
+  | 'No reading';
+
+export type StatusColor = 'green' | 'orange' | 'red' | 'gray';
+
+export interface Barangay {
+  id: number;
+  name: string;
+  totalAccounts: number;
+  doneCount: number;
+  issueCount: number;
+  pendingCount: number;
+}
+
+export interface Account {
+  id: number;
+  barangayId: number;
+  barangayName: string;
+  subscriberName: string;
+  type: AccountType;
+  lineStatus: LineStatus;
+  meterStatus: MeterStatus;
+  yearLastPayment: string | null;
+  monthLastPayment: string | null;
+  remainingBalance: number | null;
+  previousReading: number | null;
+  currentMonthStatus: StatusColor; // derived
+}
+
+export interface Reading {
+  id: number;
+  accountId: number;
+  month: string; // YYYY-MM
+  previousReading: number | null;
+  presentReading: number | null;
+  consumption: number | null;
+  remark: ReadingRemark | null;
+  notes: string | null;
+  recordedBy: string | null;
+  dateRecorded: string | null; // ISO timestamp
+}
+
+export interface ImportLog {
+  id: number;
+  filename: string;
+  importedAt: string;
+  accountsLoaded: number;
+}
+
+=== D:\Jerome\PROJECT\mogpog-waterworks\index.ts ===
+import 'expo-router/entry';
+

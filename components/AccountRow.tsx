@@ -7,6 +7,7 @@ import StatusDot from './StatusDot';
 interface Props {
   account: Account;
   onPress: () => void;
+  onLongPress?: () => void;
 }
 
 const typeBadgeColor: Record<string, string> = {
@@ -14,9 +15,14 @@ const typeBadgeColor: Record<string, string> = {
   Commercial: Colors.accent,
 };
 
-export default function AccountRow({ account, onPress }: Props) {
+export default function AccountRow({ account, onPress, onLongPress }: Props) {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={0.7}
+    >
       <StatusDot status={account.currentMonthStatus} size={12} />
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={1}>
@@ -47,36 +53,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  info: {
-    flex: 1,
-    gap: 4,
-  },
-  name: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: Radius.full,
-  },
-  badgeText: {
-    fontSize: FontSize.xs,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  reading: {
-    fontSize: FontSize.sm,
-    color: Colors.textSecondary,
-  },
-  arrow: {
-    fontSize: 20,
-    color: Colors.textMuted,
-  },
+  info: { flex: 1, gap: 4 },
+  name: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.full },
+  badgeText: { fontSize: FontSize.xs, color: '#fff', fontWeight: '600' },
+  reading: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  arrow: { fontSize: 20, color: Colors.textMuted },
 });

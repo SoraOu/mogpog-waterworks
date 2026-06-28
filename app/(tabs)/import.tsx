@@ -104,7 +104,6 @@ function parseRemark(raw: unknown): string | null {
   const s = String(raw).toUpperCase().trim();
   if (s === '') return null;
 
-  if (s.includes('HIGH CONSUMPTION')) return 'High consumption';
   if (s.includes('BLURRED')) return 'Blurred meter';
   if (s.includes('NO OCCUPANT')) return 'No occupant';
   if (s.includes('NO READING') || s.includes('NO METER READING') || s.includes('UNCHANGED')) return 'No reading';

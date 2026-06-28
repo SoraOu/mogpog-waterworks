@@ -6,28 +6,30 @@ import {
   StyleSheet,
   Text,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { getAllBarangays } from '../../db/queries';
-import { Barangay } from '../../types';
+import { getAllBarangays, searchAllAccounts } from '../../db/queries';
+import { Barangay, Account } from '../../types';
 import BarangayRow from '../../components/BarangayRow';
+import AccountRow from '../../components/AccountRow';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
+
+type SearchMode = 'barangay' | 'account';
 
 export default function HomeScreen() {
   const router = useRouter();
   const [barangays, setBarangays] = useState<Barangay[]>([]);
+  const [accountResults, setAccountResults] = useState<Account[]>([]);
   const [query, setQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<SearchMode>('barangay');
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(() => {
     setBarangays(getAllBarangays());
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-    }, [load])
-  );
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -35,7 +37,16 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  const filtered = barangays.filter((b) =>
+  function handleQueryChange(text: string) {
+    setQuery(text);
+    if (searchMode === 'account' && text.length >= 2) {
+      setAccountResults(searchAllAccounts(text));
+    } else {
+      setAccountResults([]);
+    }
+  }
+
+  const filteredBarangays = barangays.filter((b) =>
     b.name.toLowerCase().includes(query.toLowerCase())
   );
 
@@ -68,35 +79,75 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Search mode toggle */}
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, searchMode === 'barangay' && styles.toggleActive]}
+          onPress={() => { setSearchMode('barangay'); setQuery(''); setAccountResults([]); }}
+        >
+          <Text style={[styles.toggleText, searchMode === 'barangay' && styles.toggleTextActive]}>Barangay</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.toggleBtn, searchMode === 'account' && styles.toggleActive]}
+          onPress={() => { setSearchMode('account'); setQuery(''); setAccountResults([]); }}
+        >
+          <Text style={[styles.toggleText, searchMode === 'account' && styles.toggleTextActive]}>Account Search</Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Search */}
       <View style={styles.searchWrap}>
         <TextInput
           style={styles.search}
-          placeholder="Search barangay..."
+          placeholder={searchMode === 'barangay' ? 'Search barangay...' : 'Search all accounts...'}
           placeholderTextColor={Colors.textMuted}
           value={query}
-          onChangeText={setQuery}
+          onChangeText={handleQueryChange}
           clearButtonMode="while-editing"
         />
       </View>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={(b) => String(b.id)}
-        renderItem={({ item }) => (
-          <BarangayRow
-            barangay={item}
-            onPress={() => router.push(`/barangay/${item.id}?name=${encodeURIComponent(item.name)}`)}
-          />
-        )}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No barangays yet</Text>
-            <Text style={styles.emptyBody}>Go to Import to load the subscriber list.</Text>
-          </View>
-        }
-      />
+      {/* Results */}
+      {searchMode === 'barangay' ? (
+        <FlatList
+          data={filteredBarangays}
+          keyExtractor={(b) => String(b.id)}
+          renderItem={({ item }) => (
+            <BarangayRow
+              barangay={item}
+              onPress={() => router.push(`/barangay/${item.id}?name=${encodeURIComponent(item.name)}`)}
+            />
+          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>No barangays yet</Text>
+              <Text style={styles.emptyBody}>Go to Import to load the subscriber list.</Text>
+            </View>
+          }
+        />
+      ) : (
+        <FlatList
+          data={accountResults}
+          keyExtractor={(a) => String(a.id)}
+          renderItem={({ item }) => (
+            <View>
+              <Text style={styles.barangayLabel}>{item.barangayName}</Text>
+              <AccountRow
+                account={item}
+                onPress={() => router.push(`/account/${item.id}`)}
+              />
+            </View>
+          )}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyBody}>
+                {query.length < 2 ? 'Type at least 2 characters to search.' : 'No accounts found.'}
+              </Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
@@ -113,6 +164,22 @@ const styles = StyleSheet.create({
   statNum: { fontSize: FontSize.xl, fontWeight: '800', color: '#fff' },
   statLabel: { fontSize: FontSize.xs, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
   divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', marginHorizontal: 4 },
+  toggleRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: Spacing.sm + 2,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  toggleActive: { borderBottomColor: Colors.primary },
+  toggleText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textMuted },
+  toggleTextActive: { color: Colors.primary },
   searchWrap: { padding: Spacing.sm, backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border },
   search: {
     backgroundColor: Colors.background,
@@ -125,4 +192,13 @@ const styles = StyleSheet.create({
   empty: { padding: Spacing.xl, alignItems: 'center', gap: Spacing.sm },
   emptyTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textSecondary },
   emptyBody: { fontSize: FontSize.md, color: Colors.textMuted, textAlign: 'center' },
+  barangayLabel: {
+    fontSize: FontSize.xs,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    textTransform: 'uppercase',
+    backgroundColor: Colors.background,
+  },
 });
