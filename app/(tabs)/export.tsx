@@ -40,12 +40,10 @@ const EXPORT_HEADERS = [
 ];
 
 function generateMonthOptions(): string[] {
+  const year = new Date().getFullYear();
   const months: string[] = [];
-  const now = new Date();
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    months.push(val);
+  for (let m = 1; m <= 12; m++) {
+    months.push(`${year}-${String(m).padStart(2, '0')}`);
   }
   return months;
 }
@@ -90,14 +88,21 @@ export default function ExportScreen() {
   }
 
   async function exportBarangay(barangay: BarangayMeta) {
+    if (progress.done === 0) {
+      Alert.alert(
+        'No data for this month',
+        `No readings recorded for ${monthLabel(selectedMonth)}. Select a different month or record readings first.`
+      );
+      return;
+    }
     setLoading(barangay.name);
     try {
       const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
+      const safeName = readerName.replace(/\s+/g, '_');
       const wb = XLSX.utils.book_new();
       const ws = buildSheet(barangay.id);
       XLSX.utils.book_append_sheet(wb, ws, barangay.name);
       const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const safeName = readerName.replace(/\s+/g, '_');
       const filename = `${safeName}_${barangay.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
@@ -113,16 +118,23 @@ export default function ExportScreen() {
   }
 
   async function exportAll() {
+    if (progress.done === 0) {
+      Alert.alert(
+        'No data for this month',
+        `No readings recorded for ${monthLabel(selectedMonth)}. Select a different month or record readings first.`
+      );
+      return;
+    }
     setLoading('all');
     try {
       const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
+      const safeName = readerName.replace(/\s+/g, '_');
       const wb = XLSX.utils.book_new();
       for (const b of barangays) {
         const ws = buildSheet(b.id);
         XLSX.utils.book_append_sheet(wb, ws, b.name);
       }
       const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const safeName = readerName.replace(/\s+/g, '_');
       const filename = `${safeName}_All_Barangays_${selectedMonth}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
@@ -199,23 +211,30 @@ export default function ExportScreen() {
       </View>
 
       {/* Month picker modal */}
-      <Modal visible={showMonthPicker} transparent animationType="slide" onRequestClose={() => setShowMonthPicker(false)}>
+      <Modal
+        visible={showMonthPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowMonthPicker(false)}
+      >
         <Pressable style={styles.overlay} onPress={() => setShowMonthPicker(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Select Month</Text>
-          {monthOptions.map((m) => (
-            <TouchableOpacity
-              key={m}
-              style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
-              onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
-            >
-              <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                {monthLabel(m)}
-              </Text>
-              {m === selectedMonth && <Text style={styles.checkmark}>✓</Text>}
-            </TouchableOpacity>
-          ))}
+          <ScrollView>
+            {monthOptions.map((m) => (
+              <TouchableOpacity
+                key={m}
+                style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
+                onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+              >
+                <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
+                  {monthLabel(m)}
+                </Text>
+                {m === selectedMonth && <Text style={styles.checkmark}>✓</Text>}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
       </Modal>
     </ScrollView>
@@ -280,7 +299,8 @@ const styles = StyleSheet.create({
     maxHeight: '60%',
   },
   sheetHandle: {
-    width: 40, height: 4,
+    width: 40,
+    height: 4,
     backgroundColor: Colors.border,
     borderRadius: Radius.full,
     alignSelf: 'center',

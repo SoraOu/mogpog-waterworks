@@ -1,7 +1,7 @@
 import { getDb } from './schema';
 import { Account, Barangay, Reading, ImportLog, StatusColor } from '../types';
 
-// --- Settings -----------------------------------------------------------
+// --- Settings ------------------------------------------------------------
 export function getSetting(key: string): string | null {
   const db = getDb();
   const row = db.getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key]);
@@ -176,6 +176,8 @@ export function searchAllAccounts(query: string): Account[] {
 
 export function getAccount(accountId: number): Account | null {
   const db = getDb();
+  const month = currentMonth();
+
   const row = db.getFirstSync<{
     id: number;
     barangay_id: number;
@@ -188,12 +190,21 @@ export function getAccount(accountId: number): Account | null {
     month_last_payment: string | null;
     remaining_balance: number | null;
     previous_reading: number | null;
+    remark: string | null;
+    consumption: number | null;
+    has_reading: number;
   }>(`
-    SELECT a.*, b.name AS barangay_name
+    SELECT
+      a.*,
+      b.name AS barangay_name,
+      r.remark,
+      r.consumption,
+      CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
     FROM accounts a
     JOIN barangays b ON b.id = a.barangay_id
+    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
     WHERE a.id = ?
-  `, [accountId]);
+  `, [month, accountId]);
 
   if (!row) return null;
 
@@ -209,7 +220,7 @@ export function getAccount(accountId: number): Account | null {
     monthLastPayment: row.month_last_payment,
     remainingBalance: row.remaining_balance,
     previousReading: row.previous_reading,
-    currentMonthStatus: 'gray',
+    currentMonthStatus: deriveStatus(row.remark, !!row.has_reading, row.consumption),
   };
 }
 
@@ -414,7 +425,14 @@ export function upsertAccount(params: {
     INSERT INTO accounts
       (barangay_id, subscriber_name, type, line_status, meter_status, year_last_payment, month_last_payment, remaining_balance, previous_reading)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT DO NOTHING
+    ON CONFLICT(barangay_id, subscriber_name) DO UPDATE SET
+      type               = excluded.type,
+      line_status        = excluded.line_status,
+      meter_status       = excluded.meter_status,
+      year_last_payment  = excluded.year_last_payment,
+      month_last_payment = excluded.month_last_payment,
+      remaining_balance  = excluded.remaining_balance,
+      previous_reading   = excluded.previous_reading
   `, [
     params.barangayId,
     params.subscriberName,
@@ -458,11 +476,11 @@ export function updateAccountFields(accountId: number, params: {
   db.runSync(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, vals);
 }
 
-export function logImport(filename: string, accountsLoaded: number): void {
+export function logImport(filename: string, accountsLoaded: number, fileHash: string): void {
   const db = getDb();
   db.runSync(
-    'INSERT INTO import_log (filename, imported_at, accounts_loaded) VALUES (?, ?, ?)',
-    [filename, new Date().toISOString(), accountsLoaded]
+    'INSERT INTO import_log (filename, imported_at, accounts_loaded, file_hash) VALUES (?, ?, ?, ?)',
+    [filename, new Date().toISOString(), accountsLoaded, fileHash]
   );
 }
 
@@ -471,6 +489,14 @@ export function getImportLog(): ImportLog[] {
   return db.getAllSync<ImportLog>(
     'SELECT id, filename, imported_at AS importedAt, accounts_loaded AS accountsLoaded FROM import_log ORDER BY imported_at DESC'
   );
+}
+
+export function isFileAlreadyImported(hash: string): boolean {
+  const db = getDb();
+  const row = db.getFirstSync<{ id: number }>(
+    'SELECT id FROM import_log WHERE file_hash = ?', [hash]
+  );
+  return !!row;
 }
 
 // --- Export --------------------------------------------------------------

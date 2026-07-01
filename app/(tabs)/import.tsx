@@ -15,14 +15,14 @@ import * as XLSX from 'xlsx';
 import {
   upsertBarangay,
   upsertAccount,
-  updateAccountFields,
   logImport,
   getImportLog,
+  isFileAlreadyImported,
 } from '../../db/queries';
 import { ImportLog } from '../../types';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+// --- Helpers -------------------------------------------------------------
 
 /**
  * Some balance cells contain Excel formula strings like "=603.75+75".
@@ -34,10 +34,8 @@ function parseBalance(raw: unknown): number | null {
   if (typeof raw === 'number') return raw;
   const s = String(raw).trim();
   if (s === '') return null;
-  // Handle formula strings like =603.75+75 or =86.25*4+75
   if (s.startsWith('=')) {
     try {
-      // Only allow safe math characters
       const expr = s.slice(1).replace(/[^0-9+\-*/.]/g, '');
       // eslint-disable-next-line no-new-func
       const result = Function(`"use strict"; return (${expr})`)();
@@ -60,7 +58,6 @@ function parseBalance(raw: unknown): number | null {
 function parseLastPayment(raw: unknown): { year: string | null; month: string | null } {
   if (raw == null) return { year: null, month: null };
 
-  // JS Date from openpyxl / xlsx
   if (raw instanceof Date) {
     return {
       year: String(raw.getFullYear()),
@@ -69,9 +66,7 @@ function parseLastPayment(raw: unknown): { year: string | null; month: string | 
   }
 
   if (typeof raw === 'number') {
-    // Plain year like 2025
     if (raw > 1900 && raw < 2100) return { year: String(raw), month: null };
-    // Could be an Excel serial date number
     const d = XLSX.SSF.parse_date_code(raw);
     if (d) return { year: String(d.y), month: String(d.m).padStart(2, '0') };
     return { year: null, month: null };
@@ -80,7 +75,6 @@ function parseLastPayment(raw: unknown): { year: string | null; month: string | 
   const s = String(raw).trim();
   if (s === '' || s === ' ') return { year: null, month: null };
 
-  // Try M/D/YY or M/D/YYYY
   const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (slashMatch) {
     let yr = parseInt(slashMatch[3], 10);
@@ -89,7 +83,6 @@ function parseLastPayment(raw: unknown): { year: string | null; month: string | 
     return { year: String(yr), month: String(mo).padStart(2, '0') };
   }
 
-  // Plain 4-digit year
   if (/^\d{4}$/.test(s)) return { year: s, month: null };
 
   return { year: null, month: null };
@@ -97,17 +90,17 @@ function parseLastPayment(raw: unknown): { year: string | null; month: string | 
 
 /**
  * Maps freeform remarks from the Excel to the app's remark types.
- * The Excel uses all-caps and various wordings/combinations.
  */
 function parseRemark(raw: unknown): string | null {
   if (raw == null) return null;
   const s = String(raw).toUpperCase().trim();
   if (s === '') return null;
 
+  if (s.includes('HIGH CONSUMPTION')) return 'High consumption';
   if (s.includes('BLURRED')) return 'Blurred meter';
   if (s.includes('NO OCCUPANT')) return 'No occupant';
   if (s.includes('NO READING') || s.includes('NO METER READING') || s.includes('UNCHANGED')) return 'No reading';
-  if (s.includes('DISCONNECTED') || s.includes('DISC') || s.includes('CUT')) return 'No issue'; // disconnected is a line status, not a reading remark
+  if (s.includes('DISCONNECTED') || s.includes('DISC') || s.includes('CUT')) return 'No issue';
   return null;
 }
 
@@ -157,7 +150,6 @@ function findHeaderRowIndex(rows: unknown[][]): number {
 
 /**
  * Given a header row array, returns a map of { fieldKey: columnIndex }.
- * Handles the different column name variations across sheets.
  */
 function mapColumns(headerRow: unknown[]): Record<string, number> {
   const map: Record<string, number> = {};
@@ -180,7 +172,7 @@ function mapColumns(headerRow: unknown[]): Record<string, number> {
     } else if (s.includes('MONTH OF LAST') || s === 'MONTH') {
       map['monthLastPayment'] = i;
     } else if (s.includes('LAST PAYMENT') || s === 'LAST PAYMENT') {
-      map['lastPayment'] = i; // combined year+month field
+      map['lastPayment'] = i;
     } else if (s.includes('BALANCE') || s.includes('REMAINING BALANCE')) {
       map['balance'] = i;
     } else if (s.includes('REMARKS') || s === 'REMARKS') {
@@ -192,7 +184,17 @@ function mapColumns(headerRow: unknown[]): Record<string, number> {
   return map;
 }
 
-// ─── Main import logic ─────────────────────────────────────────────────────
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return String(hash);
+}
+
+// --- Main import logic ---------------------------------------------------
 
 export default function ImportScreen() {
   const [loading, setLoading] = useState(false);
@@ -220,27 +222,32 @@ export default function ImportScreen() {
         encoding: FileSystem.EncodingType.Base64,
       });
 
+      // duplicate file check
+      const fileHash = simpleHash(b64);
+      if (isFileAlreadyImported(fileHash)) {
+        Alert.alert('Already imported', 'This exact file has already been imported before.');
+        setLoading(false);
+        return;
+      }
+
       const workbook = XLSX.read(b64, { type: 'base64', cellDates: true });
 
       let totalLoaded = 0;
       const skippedSheets: string[] = [];
 
       for (const sheetName of workbook.SheetNames) {
-        // Skip non-barangay sheets
         const upperName = sheetName.toUpperCase().trim();
         if (
           upperName === 'SHEET1' ||
           upperName === 'WATER SUBSCRIBERS' ||
           upperName === 'SUMMARY'
         ) {
-          // Sheet1 may have a barangay name in cell A1 — try to use that
           if (upperName === 'SHEET1') {
             const ws = workbook.Sheets[sheetName];
             const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, {
               header: 1,
               defval: null,
             }) as unknown[][];
-            // First non-empty cell in first row is likely the barangay name
             const firstRow = allRows[0] ?? [];
             const barangayNameCell = firstRow.find(
               (c) => c != null && String(c).trim() !== ''
@@ -268,7 +275,7 @@ export default function ImportScreen() {
         totalLoaded += count;
       }
 
-      logImport(asset.name, totalLoaded);
+      logImport(asset.name, totalLoaded, fileHash);
       loadLog();
 
       let msg = `${totalLoaded} accounts loaded from ${workbook.SheetNames.length} sheet(s).`;
@@ -299,7 +306,6 @@ export default function ImportScreen() {
     const headerRow = allRows[headerRowIdx] as unknown[];
     const colMap = mapColumns(headerRow);
 
-    // Must at least have a name column
     if (colMap['name'] === undefined) return 0;
 
     const barangayId = upsertBarangay(barangayName);
@@ -308,13 +314,11 @@ export default function ImportScreen() {
     for (let i = headerRowIdx + 1; i < allRows.length; i++) {
       const row = allRows[i] as unknown[];
 
-      // Get subscriber name
       const rawName = row[colMap['name']];
       if (rawName == null) continue;
       const subscriberName = String(rawName).trim();
-      if (subscriberName === '' || /^\d+$/.test(subscriberName)) continue; // skip row numbers
+      if (subscriberName === '' || /^\d+$/.test(subscriberName)) continue;
 
-      // Type
       const type =
         colMap['type'] !== undefined
           ? String(row[colMap['type']] ?? 'Residential').trim() || 'Residential'
@@ -322,7 +326,6 @@ export default function ImportScreen() {
       const normalizedType =
         type.toUpperCase() === 'COMMERCIAL' ? 'Commercial' : 'Residential';
 
-      // Line status — derive from remarks if no dedicated column
       let lineStatus = 'Operational';
       if (colMap['lineStatus'] !== undefined) {
         lineStatus = parseLineStatus(row[colMap['lineStatus']]);
@@ -338,7 +341,6 @@ export default function ImportScreen() {
         }
       }
 
-      // Meter status — derive from remarks if no dedicated column
       let meterStatus = 'In-service';
       if (colMap['meterStatus'] !== undefined) {
         meterStatus = parseMeterStatus(row[colMap['meterStatus']]);
@@ -348,13 +350,11 @@ export default function ImportScreen() {
         if (s.includes('BLURRED')) meterStatus = 'Blurred';
       }
 
-      // Balance
       const balance =
         colMap['balance'] !== undefined
           ? parseBalance(row[colMap['balance']])
           : null;
 
-      // Last payment — either split year/month columns or combined
       let yearLastPayment: string | null = null;
       let monthLastPayment: string | null = null;
 
@@ -362,19 +362,17 @@ export default function ImportScreen() {
         colMap['yearLastPayment'] !== undefined &&
         colMap['monthLastPayment'] !== undefined
       ) {
-        // Dedicated year and month columns (WATER SUBSCRIBERS sheet)
         const yr = row[colMap['yearLastPayment']];
         const mo = row[colMap['monthLastPayment']];
         yearLastPayment = yr != null ? String(yr).trim() : null;
         monthLastPayment = mo != null ? String(mo).trim() : null;
       } else if (colMap['lastPayment'] !== undefined) {
-        // Combined "Last Payment" column
         const parsed = parseLastPayment(row[colMap['lastPayment']]);
         yearLastPayment = parsed.year;
         monthLastPayment = parsed.month;
       }
 
-      const accountId = upsertAccount({
+      upsertAccount({
         barangayId,
         subscriberName,
         type: normalizedType,
@@ -383,15 +381,7 @@ export default function ImportScreen() {
         yearLastPayment,
         monthLastPayment,
         remainingBalance: balance,
-        previousReading: null, // Excel doesn't have meter readings
-      });
-
-      updateAccountFields(accountId, {
-        lineStatus,
-        meterStatus,
-        yearLastPayment,
-        monthLastPayment,
-        remainingBalance: balance,
+        previousReading: null,
       });
 
       count++;

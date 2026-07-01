@@ -158,8 +158,6 @@ export default function ReadingEntryScreen() {
 
   function doSave(presentNum: number | null) {
     const cons = presentNum !== null && prev !== null ? presentNum - prev : null;
-    const finalRemark: ReadingRemark =
-      isHighConsumption && remark === 'No issue' ? 'High consumption' : remark;
 
     saveReading({
       accountId: Number(id),
@@ -167,7 +165,7 @@ export default function ReadingEntryScreen() {
       previousReading: prev,
       presentReading: presentNum,
       consumption: cons,
-      remark: finalRemark,
+      remark: remark,
       notes: notes.trim() || null,
       recordedBy: readerName.trim() || null,
       dateRecorded: recordedDate,
