@@ -499,58 +499,72 @@ export function isFileAlreadyImported(hash: string): boolean {
   return !!row;
 }
 
-// --- Export --------------------------------------------------------------
-export interface ExportRow {
+// --- Export ----------------------------------------------------------------
+// Matches the "WATER SUBSCRIBERS" sheet layout of WATER_SUBSCRIBER_REPORT.xlsx:
+// BARANGAY | SUBSCRIBER'S NAME | TYPE | LINE STATUS | WATER METER STATUS |
+// WATER METER READER | ISSUANCE OF DISCONNECTION | DATE OF ISSUANCE |
+// NOD DATE RECEIVED | DISCONNECTION DATE | DISCONNECTION STATUS | (blank) |
+// MONTH OF LAST PAYMENT | REMAINING BALANCE | REMARKS
+//
+// The disconnection-process columns (issuance, NOD date, disconnection date/
+// status) aren't tracked anywhere in this app's data model, so they're left
+// blank for the reader to fill in on paper/Excel. WATER METER READER is
+// filled from the 'reader_name' setting since that's already captured.
+export interface FullExportRow {
+  barangay: string;
   subscriberName: string;
   type: string;
   lineStatus: string;
   meterStatus: string;
-  previousReading: number | null;
-  presentReading: number | null;
-  consumption: number | null;
-  remarks: string | null;
-  yearLastPayment: string | null;
+  meterReader: string;
   monthLastPayment: string | null;
   remainingBalance: number | null;
+  remarks: string | null;
 }
 
-export function getExportData(barangayId: number, month: string): ExportRow[] {
+export function getFullExportData(month: string, barangayId?: number): FullExportRow[] {
   const db = getDb();
+  const readerName = getSetting('reader_name') ?? '';
+
+  const params: (string | number)[] = [month];
+  let where = '';
+  if (barangayId != null) {
+    where = 'WHERE a.barangay_id = ?';
+    params.push(barangayId);
+  }
+
   const rows = db.getAllSync<{
+    barangay_name: string;
     subscriber_name: string;
     type: string;
     line_status: string;
     meter_status: string;
-    previous_reading: number | null;
-    present_reading: number | null;
-    consumption: number | null;
-    remark: string | null;
-    year_last_payment: string | null;
     month_last_payment: string | null;
     remaining_balance: number | null;
+    remark: string | null;
   }>(`
     SELECT
+      b.name AS barangay_name,
       a.subscriber_name, a.type, a.line_status, a.meter_status,
-      a.year_last_payment, a.month_last_payment, a.remaining_balance,
-      r.previous_reading, r.present_reading, r.consumption, r.remark
+      a.month_last_payment, a.remaining_balance,
+      r.remark
     FROM accounts a
+    JOIN barangays b ON b.id = a.barangay_id
     LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
-    WHERE a.barangay_id = ?
-    ORDER BY a.subscriber_name
-  `, [month, barangayId]);
+    ${where}
+    ORDER BY b.name, a.subscriber_name
+  `, params);
 
   return rows.map((r) => ({
+    barangay: r.barangay_name,
     subscriberName: r.subscriber_name,
     type: r.type,
     lineStatus: r.line_status,
     meterStatus: r.meter_status,
-    previousReading: r.previous_reading,
-    presentReading: r.present_reading,
-    consumption: r.consumption,
-    remarks: r.remark,
-    yearLastPayment: r.year_last_payment,
+    meterReader: readerName,
     monthLastPayment: r.month_last_payment,
     remainingBalance: r.remaining_balance,
+    remarks: r.remark,
   }));
 }
 

@@ -16,7 +16,7 @@ import { useFocusEffect } from 'expo-router';
 import * as XLSX from 'xlsx';
 import {
   getAllBarangaysForExport,
-  getExportData,
+  getFullExportData,
   getOverallProgress,
   currentMonth,
   getSetting,
@@ -25,19 +25,27 @@ import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
 type BarangayMeta = { id: number; name: string };
 
-const EXPORT_HEADERS = [
-  'Subscriber Name',
-  'Type',
-  'Line Status',
-  'Water Meter Status',
-  'Previous Reading',
-  'Present Reading',
-  'Consumption',
-  'Remarks',
-  'Year of Last Payment',
-  'Month of Last Payment',
-  'Remaining Balance',
+// Column order matches the "WATER SUBSCRIBERS" sheet in
+// WATER_SUBSCRIBER_REPORT.xlsx exactly, including the blank spacer column
+// between DISCONNECTION STATUS and MONTH OF LAST PAYMENT.
+const TEMPLATE_HEADERS = [
+  'BARANGAY',
+  "SUBSCRIBER'S NAME",
+  'TYPE',
+  'LINE STATUS',
+  'WATER METER STATUS',
+  'WATER METER READER',
+  'ISSUANCE OF DISCONNECTION',
+  'DATE OF ISSUANCE',
+  'NOD DATE RECEIVED',
+  'DISCONNECTION DATE',
+  'DISCONNECTION STATUS',
+  '',
+  'MONTH OF LAST PAYMENT',
+  'REMAINING BALANCE',
+  'REMARKS',
 ];
+const TEMPLATE_SHEET_NAME = 'WATER SUBSCRIBERS';
 
 function generateMonthOptions(): string[] {
   const year = new Date().getFullYear();
@@ -69,22 +77,31 @@ export default function ExportScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  function buildSheet(barangayId: number) {
-    const rows = getExportData(barangayId, selectedMonth);
-    const data = rows.map((r) => ({
-      'Subscriber Name': r.subscriberName,
-      'Type': r.type,
-      'Line Status': r.lineStatus,
-      'Water Meter Status': r.meterStatus,
-      'Previous Reading': r.previousReading ?? '',
-      'Present Reading': r.presentReading ?? '',
-      'Consumption': r.consumption ?? '',
-      'Remarks': r.remarks ?? '',
-      'Year of Last Payment': r.yearLastPayment ?? '',
-      'Month of Last Payment': r.monthLastPayment ?? '',
-      'Remaining Balance': r.remainingBalance ?? '',
-    }));
-    return XLSX.utils.json_to_sheet(data, { header: EXPORT_HEADERS });
+  // barangayId omitted => rows for every barangay, in one sheet, matching
+  // the master WATER SUBSCRIBERS tab of the template workbook.
+  function buildTemplateSheet(barangayId?: number) {
+    const rows = getFullExportData(selectedMonth, barangayId);
+    const aoa: (string | number)[][] = [TEMPLATE_HEADERS];
+    for (const r of rows) {
+      aoa.push([
+        r.barangay,
+        r.subscriberName,
+        r.type,
+        r.lineStatus,
+        r.meterStatus,
+        r.meterReader,
+        '', // Issuance of Disconnection — not tracked in-app
+        '', // Date of Issuance — not tracked in-app
+        '', // NOD Date Received — not tracked in-app
+        '', // Disconnection Date — not tracked in-app
+        '', // Disconnection Status — not tracked in-app
+        '', // blank spacer column (matches template)
+        r.monthLastPayment ?? '',
+        r.remainingBalance ?? '',
+        r.remarks ?? '',
+      ]);
+    }
+    return XLSX.utils.aoa_to_sheet(aoa);
   }
 
   async function exportBarangay(barangay: BarangayMeta) {
@@ -100,8 +117,8 @@ export default function ExportScreen() {
       const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
       const safeName = readerName.replace(/\s+/g, '_');
       const wb = XLSX.utils.book_new();
-      const ws = buildSheet(barangay.id);
-      XLSX.utils.book_append_sheet(wb, ws, barangay.name);
+      const ws = buildTemplateSheet(barangay.id);
+      XLSX.utils.book_append_sheet(wb, ws, TEMPLATE_SHEET_NAME);
       const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const filename = `${safeName}_${barangay.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
@@ -130,10 +147,8 @@ export default function ExportScreen() {
       const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
       const safeName = readerName.replace(/\s+/g, '_');
       const wb = XLSX.utils.book_new();
-      for (const b of barangays) {
-        const ws = buildSheet(b.id);
-        XLSX.utils.book_append_sheet(wb, ws, b.name);
-      }
+      const ws = buildTemplateSheet(); // no barangayId => every barangay, one sheet
+      XLSX.utils.book_append_sheet(wb, ws, TEMPLATE_SHEET_NAME);
       const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
       const filename = `${safeName}_All_Barangays_${selectedMonth}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
