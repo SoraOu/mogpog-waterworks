@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
+  countAccountsWithName,
   createAccount,
   createBarangay,
   getAllBarangayNames,
@@ -17,7 +18,14 @@ import {
 import { LineStatus, MeterStatus, AccountType } from '../../types';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
-const LINE_STATUSES: LineStatus[] = ['Operational', 'Disconnected', 'No Occupant', 'Temporary Closed'];
+const LINE_STATUSES: LineStatus[] = [
+  'Operational',
+  'Disconnected',
+  'No Occupant',
+  'Temporary Closed',
+  'Pending Verification',
+  'High Consumption',
+];
 const METER_STATUSES: MeterStatus[] = ['In-service', 'Blurred'];
 const ACCOUNT_TYPES: AccountType[] = ['Residential', 'Commercial'];
 
@@ -50,17 +58,35 @@ export default function AddAccountScreen() {
       targetBarangayId = createBarangay(newBarangayName.trim());
     }
 
-    createAccount({
-      barangayId: targetBarangayId,
-      subscriberName: name.trim(),
-      type,
-      lineStatus,
-      meterStatus,
-    });
+    const finalBarangayId = targetBarangayId;
+    const doCreate = () => {
+      createAccount({
+        barangayId: finalBarangayId,
+        subscriberName: name.trim(),
+        type,
+        lineStatus,
+        meterStatus,
+      });
 
-    Alert.alert('Account created', `"${name.trim()}" has been added.`, [
-      { text: 'OK', onPress: () => router.back() },
-    ]);
+      Alert.alert('Account created', `"${name.trim()}" has been added.`, [
+        { text: 'OK', onPress: () => router.back() },
+      ]);
+    };
+
+    // Names are not unique, so only warn when the same name already exists here.
+    if (countAccountsWithName(finalBarangayId, name.trim()) > 0) {
+      Alert.alert(
+        'Same name already exists',
+        `There is already a subscriber named "${name.trim()}" in this barangay. Add another account with the same name?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Add anyway', onPress: doCreate },
+        ]
+      );
+      return;
+    }
+
+    doCreate();
   }
 
   return (

@@ -34,7 +34,14 @@ function readingStatusColor(r: Reading) {
   return 'green' as const;
 }
 
-const LINE_STATUSES: LineStatus[] = ['Operational', 'Disconnected', 'No Occupant', 'Temporary Closed'];
+const LINE_STATUSES: LineStatus[] = [
+  'Operational',
+  'Disconnected',
+  'No Occupant',
+  'Temporary Closed',
+  'Pending Verification',
+  'High Consumption',
+];
 const METER_STATUSES: MeterStatus[] = ['In-service', 'Blurred'];
 
 export default function AccountDetailScreen() {
@@ -50,6 +57,7 @@ export default function AccountDetailScreen() {
   const [editLine, setEditLine] = useState<LineStatus>('Operational');
   const [editMeter, setEditMeter] = useState<MeterStatus>('In-service');
   const [editPrevReading, setEditPrevReading] = useState('');
+  const [editRemarks, setEditRemarks] = useState('');
 
   const load = useCallback(() => {
     const a = getAccount(Number(id));
@@ -66,13 +74,16 @@ export default function AccountDetailScreen() {
     Disconnected: Colors.red,
     'No Occupant': Colors.orange,
     'Temporary Closed': Colors.orange,
+    'Pending Verification': Colors.orange,
+    'High Consumption': Colors.red,
   };
 
   function openEdit() {
     setEditName(account!.subscriberName);
     setEditLine(account!.lineStatus);
     setEditMeter(account!.meterStatus);
-    setEditPrevReading(account!.previousReading != null ? String(account!.previousReading) : '');
+    setEditPrevReading(account!.openingReading != null ? String(account!.openingReading) : '');
+    setEditRemarks(account!.remarks ?? '');
     setShowEdit(true);
   }
 
@@ -85,7 +96,8 @@ export default function AccountDetailScreen() {
       subscriberName: editName.trim(),
       lineStatus: editLine,
       meterStatus: editMeter,
-      previousReading: editPrevReading !== '' ? parseFloat(editPrevReading) : null,
+      previousReading: editPrevReading !== '' && !isNaN(parseFloat(editPrevReading)) ? parseFloat(editPrevReading) : null,
+      remarks: editRemarks.trim() !== '' ? editRemarks.trim() : null,
     });
     setShowEdit(false);
     load();
@@ -176,6 +188,7 @@ export default function AccountDetailScreen() {
             {account.previousReading != null && (
               <InfoRow label="Previous Reading" value={`${account.previousReading} m³`} />
             )}
+            {account.remarks ? <InfoRow label="Remarks" value={account.remarks} /> : null}
           </View>
           <TouchableOpacity style={styles.deleteAccountBtn} onPress={handleDeleteAccount}>
             <Text style={styles.deleteAccountBtnText}>🗑 Delete Account</Text>
@@ -304,7 +317,7 @@ export default function AccountDetailScreen() {
             ))}
           </View>
 
-          <Text style={styles.fieldLabel}>Previous Reading (m³)</Text>
+          <Text style={styles.fieldLabel}>Opening Reading (m³) — used only when there is no earlier reading</Text>
           <TextInput
             style={styles.textInput}
             value={editPrevReading}
@@ -312,6 +325,15 @@ export default function AccountDetailScreen() {
             placeholder="e.g. 123.5"
             placeholderTextColor={Colors.textMuted}
             keyboardType="numeric"
+          />
+
+          <Text style={styles.fieldLabel}>Remarks</Text>
+          <TextInput
+            style={styles.textInput}
+            value={editRemarks}
+            onChangeText={setEditRemarks}
+            placeholder="Optional"
+            placeholderTextColor={Colors.textMuted}
           />
 
           <TouchableOpacity style={styles.saveBtn} onPress={saveEdit}>

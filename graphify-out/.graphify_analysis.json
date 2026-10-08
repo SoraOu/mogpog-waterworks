@@ -1,0 +1,401 @@
+{
+  "communities": {
+    "0": [
+      "app_barangay_id",
+      "app_barangay_id_styles",
+      "app_settings_index",
+      "app_settings_index_settingsscreen",
+      "app_settings_index_settingsscreen_handlesave",
+      "app_settings_index_styles",
+      "app_tabs_index",
+      "app_tabs_index_homescreen",
+      "app_tabs_index_homescreen_handlequerychange",
+      "app_tabs_index_searchmode",
+      "app_tabs_index_styles",
+      "app_tabs_layout",
+      "app_tabs_layout_tabicon",
+      "app_tabs_layout_tablayout",
+      "components_accountrow",
+      "components_accountrow_accountrow",
+      "components_accountrow_props",
+      "components_accountrow_styles",
+      "components_accountrow_typebadgecolor",
+      "components_barangayrow",
+      "components_barangayrow_barangayrow",
+      "components_barangayrow_progresscolor",
+      "components_barangayrow_progresslabel",
+      "components_barangayrow_props",
+      "components_barangayrow_styles",
+      "components_statusdot",
+      "components_statusdot_colormap",
+      "components_statusdot_styles",
+      "constants_theme",
+      "constants_theme_colors",
+      "constants_theme_fontsize",
+      "constants_theme_radius",
+      "constants_theme_spacing",
+      "db_queries_getallbarangays",
+      "db_queries_searchallaccounts",
+      "db_queries_setsetting",
+      "ref_react",
+      "ref_react_native",
+      "types_index_account",
+      "types_index_barangay"
+    ],
+    "1": [
+      "app_barangay_id_barangayscreen",
+      "app_barangay_id_barangayscreen_handlemarknoreading",
+      "app_barangay_id_barangayscreen_togglesort",
+      "app_reading_id",
+      "app_reading_id_formatdatelabel",
+      "app_reading_id_generatemonthoptions",
+      "app_reading_id_monthlabel",
+      "app_reading_id_readingentryscreen",
+      "app_reading_id_readingentryscreen_applydatepicker",
+      "app_reading_id_readingentryscreen_dosave",
+      "app_reading_id_readingentryscreen_handlesave",
+      "app_reading_id_readingentryscreen_numpadpress",
+      "app_reading_id_remark_colors",
+      "app_reading_id_remarks",
+      "app_reading_id_styles",
+      "db_queries",
+      "db_queries_currentmonth",
+      "db_queries_derivestatus",
+      "db_queries_fullexportrow",
+      "db_queries_getaccount",
+      "db_queries_getaccountsbybarangay",
+      "db_queries_getoverallprogress",
+      "db_queries_getreading",
+      "db_queries_getreadingsforaccount",
+      "db_queries_marknoreading",
+      "db_queries_savereading",
+      "db_queries_sortdir",
+      "db_queries_sortfield",
+      "db_queries_updateaccountfields",
+      "db_queries_updateaccountstatus",
+      "db_schema_getdb"
+    ],
+    "2": [
+      "app_layout",
+      "app_layout_rootlayout",
+      "db_schema",
+      "db_schema_initdb",
+      "index",
+      "package",
+      "package_devdependencies",
+      "package_devdependencies_types_react",
+      "package_devdependencies_typescript",
+      "package_main",
+      "package_name",
+      "package_private",
+      "package_scripts",
+      "package_scripts_android",
+      "package_scripts_ios",
+      "package_scripts_start",
+      "package_scripts_web",
+      "package_version",
+      "ref_expo",
+      "ref_expo_document_picker",
+      "ref_expo_file_system",
+      "ref_expo_linking",
+      "ref_expo_router",
+      "ref_expo_splash_screen",
+      "ref_expo_sqlite",
+      "ref_expo_status_bar",
+      "ref_react_native_safe_area_context",
+      "ref_react_native_screens",
+      "ref_types_react",
+      "ref_typescript"
+    ],
+    "3": [
+      "app",
+      "app_adaptiveicon_backgroundcolor",
+      "app_adaptiveicon_foregroundimage",
+      "app_android_adaptiveicon",
+      "app_android_package",
+      "app_android_predictivebackgestureenabled",
+      "app_eas_projectid",
+      "app_expo",
+      "app_expo_android",
+      "app_expo_extra",
+      "app_expo_icon",
+      "app_expo_ios",
+      "app_expo_name",
+      "app_expo_newarchenabled",
+      "app_expo_orientation",
+      "app_expo_plugins",
+      "app_expo_scheme",
+      "app_expo_slug",
+      "app_expo_userinterfacestyle",
+      "app_expo_version",
+      "app_expo_web",
+      "app_extra_eas",
+      "app_extra_router",
+      "app_ios_supportstablet",
+      "app_web_bundler",
+      "app_web_favicon"
+    ],
+    "4": [
+      "app_account_add",
+      "app_account_add_account_types",
+      "app_account_add_addaccountscreen",
+      "app_account_add_addaccountscreen_handlesave",
+      "app_account_add_line_statuses",
+      "app_account_add_meter_statuses",
+      "app_account_add_styles",
+      "components_statusdot_props",
+      "db_queries_createaccount",
+      "db_queries_createbarangay",
+      "db_queries_getallbarangaynames",
+      "types_index",
+      "types_index_accounttype",
+      "types_index_importlog",
+      "types_index_linestatus",
+      "types_index_meterstatus",
+      "types_index_reading",
+      "types_index_readingremark",
+      "types_index_statuscolor"
+    ],
+    "5": [
+      "app_account_id",
+      "app_account_id_accountdetailscreen",
+      "app_account_id_accountdetailscreen_handleaddreading",
+      "app_account_id_accountdetailscreen_handledeleteaccount",
+      "app_account_id_accountdetailscreen_handledeletereading",
+      "app_account_id_accountdetailscreen_handleeditreading",
+      "app_account_id_accountdetailscreen_openedit",
+      "app_account_id_accountdetailscreen_saveedit",
+      "app_account_id_detailitem",
+      "app_account_id_inforow",
+      "app_account_id_line_statuses",
+      "app_account_id_meter_statuses",
+      "app_account_id_monthlabel",
+      "app_account_id_readingstatuscolor",
+      "app_account_id_styles",
+      "components_statusdot_statusdot",
+      "db_queries_deleteaccount",
+      "db_queries_deletereading",
+      "db_queries_updateaccountdetails"
+    ],
+    "6": [
+      "app_tabs_import",
+      "app_tabs_import_findheaderrowindex",
+      "app_tabs_import_importscreen",
+      "app_tabs_import_importscreen_formatdate",
+      "app_tabs_import_importscreen_handlepick",
+      "app_tabs_import_importscreen_processsheet",
+      "app_tabs_import_mapcolumns",
+      "app_tabs_import_parsebalance",
+      "app_tabs_import_parselastpayment",
+      "app_tabs_import_parselinestatus",
+      "app_tabs_import_parsemeterstatus",
+      "app_tabs_import_parseremark",
+      "app_tabs_import_simplehash",
+      "app_tabs_import_styles",
+      "db_queries_getimportlog",
+      "db_queries_isfilealreadyimported",
+      "db_queries_logimport",
+      "db_queries_upsertaccount",
+      "db_queries_upsertbarangay"
+    ],
+    "7": [
+      "app_tabs_export",
+      "app_tabs_export_barangaymeta",
+      "app_tabs_export_exportscreen",
+      "app_tabs_export_exportscreen_buildtemplatesheet",
+      "app_tabs_export_exportscreen_exportall",
+      "app_tabs_export_exportscreen_exportbarangay",
+      "app_tabs_export_generatemonthoptions",
+      "app_tabs_export_monthlabel",
+      "app_tabs_export_styles",
+      "app_tabs_export_template_headers",
+      "db_queries_getallbarangaysforexport",
+      "db_queries_getfullexportdata",
+      "db_queries_getsetting",
+      "ref_expo_sharing",
+      "ref_xlsx"
+    ],
+    "8": [
+      "package_dependencies",
+      "package_dependencies_expo",
+      "package_dependencies_expo_document_picker",
+      "package_dependencies_expo_file_system",
+      "package_dependencies_expo_linking",
+      "package_dependencies_expo_router",
+      "package_dependencies_expo_sharing",
+      "package_dependencies_expo_splash_screen",
+      "package_dependencies_expo_sqlite",
+      "package_dependencies_expo_status_bar",
+      "package_dependencies_react",
+      "package_dependencies_react_native",
+      "package_dependencies_react_native_safe_area_context",
+      "package_dependencies_react_native_screens",
+      "package_dependencies_xlsx"
+    ],
+    "9": [
+      "ref_expo_tsconfig_base",
+      "tsconfig",
+      "tsconfig_compileroptions",
+      "tsconfig_compileroptions_strict",
+      "tsconfig_extends"
+    ]
+  },
+  "cohesion": {
+    "0": 0.12179487179487179,
+    "1": 0.13118279569892474,
+    "2": 0.07586206896551724,
+    "3": 0.07692307692307693,
+    "4": 0.14619883040935672,
+    "5": 0.17543859649122806,
+    "6": 0.2046783625730994,
+    "7": 0.2571428571428571,
+    "8": 0.13333333333333333,
+    "9": 0.4
+  },
+  "gods": [
+    {
+      "id": "db_schema_getdb",
+      "label": "getDb()",
+      "degree": 29
+    },
+    {
+      "id": "app_account_id_accountdetailscreen",
+      "label": "AccountDetailScreen()",
+      "degree": 17
+    },
+    {
+      "id": "db_queries_getsetting",
+      "label": "getSetting()",
+      "degree": 16
+    },
+    {
+      "id": "constants_theme_colors",
+      "label": "Colors",
+      "degree": 14
+    },
+    {
+      "id": "ref_react",
+      "label": "react",
+      "degree": 14
+    },
+    {
+      "id": "app_expo",
+      "label": "expo",
+      "degree": 14
+    },
+    {
+      "id": "app_reading_id_readingentryscreen",
+      "label": "ReadingEntryScreen()",
+      "degree": 13
+    },
+    {
+      "id": "ref_react_native",
+      "label": "react-native",
+      "degree": 13
+    },
+    {
+      "id": "db_queries_currentmonth",
+      "label": "currentMonth()",
+      "degree": 12
+    },
+    {
+      "id": "ref_expo_router",
+      "label": "expo-router",
+      "degree": 12
+    }
+  ],
+  "surprises": [
+    {
+      "source": "Props",
+      "target": "Account",
+      "source_files": [
+        "components/AccountRow.tsx",
+        "types/index.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories; peripheral node `Props` unexpectedly reaches hub `Account`"
+    },
+    {
+      "source": "Props",
+      "target": "Barangay",
+      "source_files": [
+        "components/BarangayRow.tsx",
+        "types/index.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "references",
+      "why": "connects across different repos/directories; peripheral node `Props` unexpectedly reaches hub `Barangay`"
+    },
+    {
+      "source": "SettingsScreen()",
+      "target": "getSetting()",
+      "source_files": [
+        "app/settings/index.tsx",
+        "db/queries.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "handleSave()",
+      "target": "setSetting()",
+      "source_files": [
+        "app/settings/index.tsx",
+        "db/queries.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "connects across different repos/directories; peripheral node `handleSave()` unexpectedly reaches hub `setSetting()`"
+    },
+    {
+      "source": "handleQueryChange()",
+      "target": "searchAllAccounts()",
+      "source_files": [
+        "app/(tabs)/index.tsx",
+        "db/queries.ts"
+      ],
+      "confidence": "EXTRACTED",
+      "relation": "calls",
+      "why": "connects across different repos/directories; peripheral node `handleQueryChange()` unexpectedly reaches hub `searchAllAccounts()`"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `dependencies` connect `Community 8` to `Community 2`?",
+      "why": "High betweenness centrality (0.106) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `react` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`?",
+      "why": "High betweenness centrality (0.083) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `react-native` connect `Community 0` to `Community 1`, `Community 2`, `Community 4`, `Community 5`, `Community 6`, `Community 7`?",
+      "why": "High betweenness centrality (0.078) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `SearchMode`, `FullExportRow`, `BarangayMeta` to the rest of the system?",
+      "why": "76 weakly-connected nodes found - possible documentation gaps or missing edges."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 0` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.12179487179487179 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 1` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.13118279569892474 - nodes in this community are weakly interconnected."
+    },
+    {
+      "type": "low_cohesion",
+      "question": "Should `Community 2` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.07586206896551724 - nodes in this community are weakly interconnected."
+    }
+  ]
+}

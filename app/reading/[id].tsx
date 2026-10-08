@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import {
   getAccount,
+  getPreviousReading,
   getReadingsForAccount,
   saveReading,
   currentMonth,
@@ -105,7 +106,9 @@ export default function ReadingEntryScreen() {
 
   if (!account) return null;
 
-  const prev = account.previousReading;
+  // Previous follows the selected month: the latest earlier present reading,
+  // or the account's opening reading when there is none.
+  const prev = getPreviousReading(Number(id), selectedMonth);
   const present = parseFloat(presentValue);
   const consumption = !isNaN(present) && prev !== null ? present - prev : null;
 

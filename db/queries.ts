@@ -19,6 +19,63 @@ export function currentMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// --- Previous-reading model ----------------------------------------------
+// Readings store the PRESENT value. "Previous" is not kept as a rolling number
+// on the account; it is derived:
+//   1. the present reading of the latest EARLIER month that has one, otherwise
+//   2. the account's opening reading (accounts.previous_reading).
+// This matches the official workbook, where each month's PAST is the previous
+// month's PRESENT and only January's PAST is typed in.
+
+// SQL fragment: derived previous for account alias `a`, for the month bound to
+// its single `?` placeholder.
+const DERIVED_PREVIOUS_SQL = `COALESCE(
+  (SELECT r2.present_reading FROM readings r2
+   WHERE r2.account_id = a.id AND r2.month < ? AND r2.present_reading IS NOT NULL
+   ORDER BY r2.month DESC LIMIT 1),
+  a.previous_reading
+)`;
+
+export function getPreviousReading(accountId: number, month: string): number | null {
+  const db = getDb();
+  const earlier = db.getFirstSync<{ present_reading: number }>(
+    `SELECT present_reading FROM readings
+     WHERE account_id = ? AND month < ? AND present_reading IS NOT NULL
+     ORDER BY month DESC LIMIT 1`,
+    [accountId, month]
+  );
+  if (earlier) return earlier.present_reading;
+
+  const acc = db.getFirstSync<{ previous_reading: number | null }>(
+    'SELECT previous_reading FROM accounts WHERE id = ?',
+    [accountId]
+  );
+  return acc?.previous_reading ?? null;
+}
+
+// After a reading is saved/deleted (or the opening reading changes), the next
+// later reading that has a present value must pick up its new previous value.
+// Only that one row can change: later rows depend on present values, which are
+// untouched. Pass '' to start from the beginning.
+function rechainAfter(accountId: number, afterMonth: string): void {
+  const db = getDb();
+  const next = db.getFirstSync<{ id: number; month: string; present_reading: number }>(
+    `SELECT id, month, present_reading FROM readings
+     WHERE account_id = ? AND month > ? AND present_reading IS NOT NULL
+     ORDER BY month ASC LIMIT 1`,
+    [accountId, afterMonth]
+  );
+  if (!next) return;
+
+  const prev = getPreviousReading(accountId, next.month);
+  const consumption = prev !== null ? next.present_reading - prev : null;
+  db.runSync('UPDATE readings SET previous_reading = ?, consumption = ? WHERE id = ?', [
+    prev,
+    consumption,
+    next.id,
+  ]);
+}
+
 // --- Barangays -----------------------------------------------------------
 export function getAllBarangays(): Barangay[] {
   const db = getDb();
@@ -67,6 +124,57 @@ function deriveStatus(remark: string | null, hasReading: boolean, consumption: n
 export type SortField = 'name' | 'status';
 export type SortDir = 'asc' | 'desc';
 
+interface AccountRow {
+  id: number;
+  barangay_id: number;
+  barangay_name: string;
+  subscriber_name: string;
+  type: string;
+  line_status: string;
+  meter_status: string;
+  year_last_payment: string | null;
+  month_last_payment: string | null;
+  remaining_balance: number | null;
+  previous_reading: number | null; // opening reading
+  remarks: string | null;
+  derived_previous: number | null;
+  remark: string | null; // this month's reading remark
+  consumption: number | null;
+  has_reading: number;
+}
+
+function mapAccount(r: AccountRow): Account {
+  return {
+    id: r.id,
+    barangayId: r.barangay_id,
+    barangayName: r.barangay_name,
+    subscriberName: r.subscriber_name,
+    type: r.type as Account['type'],
+    lineStatus: r.line_status as Account['lineStatus'],
+    meterStatus: r.meter_status as Account['meterStatus'],
+    yearLastPayment: r.year_last_payment,
+    monthLastPayment: r.month_last_payment,
+    remainingBalance: r.remaining_balance,
+    previousReading: r.derived_previous,
+    openingReading: r.previous_reading,
+    remarks: r.remarks,
+    currentMonthStatus: deriveStatus(r.remark, !!r.has_reading, r.consumption),
+  };
+}
+
+const ACCOUNT_SELECT = `
+  SELECT
+    a.*,
+    b.name AS barangay_name,
+    ${DERIVED_PREVIOUS_SQL} AS derived_previous,
+    r.remark,
+    r.consumption,
+    CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
+  FROM accounts a
+  JOIN barangays b ON b.id = a.barangay_id
+  LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
+`;
+
 export function getAccountsByBarangay(
   barangayId: number,
   sortField: SortField = 'name',
@@ -77,151 +185,44 @@ export function getAccountsByBarangay(
 
   const orderClause =
     sortField === 'status'
-      ? `has_reading ${sortDir}, a.subscriber_name ASC`
-      : `a.subscriber_name ${sortDir}`;
+      ? `has_reading ${sortDir}, a.subscriber_name ASC, a.id ASC`
+      : `a.subscriber_name ${sortDir}, a.id ASC`;
 
-  const rows = db.getAllSync<{
-    id: number;
-    barangay_id: number;
-    barangay_name: string;
-    subscriber_name: string;
-    type: string;
-    line_status: string;
-    meter_status: string;
-    year_last_payment: string | null;
-    month_last_payment: string | null;
-    remaining_balance: number | null;
-    previous_reading: number | null;
-    remark: string | null;
-    consumption: number | null;
-    has_reading: number;
-  }>(`
-    SELECT
-      a.*,
-      b.name AS barangay_name,
-      r.remark,
-      r.consumption,
-      CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
-    FROM accounts a
-    JOIN barangays b ON b.id = a.barangay_id
-    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
-    WHERE a.barangay_id = ?
-    ORDER BY ${orderClause}
-  `, [month, barangayId]);
+  const rows = db.getAllSync<AccountRow>(
+    `${ACCOUNT_SELECT}
+     WHERE a.barangay_id = ?
+     ORDER BY ${orderClause}`,
+    [month, month, barangayId]
+  );
 
-  return rows.map((r) => ({
-    id: r.id,
-    barangayId: r.barangay_id,
-    barangayName: r.barangay_name,
-    subscriberName: r.subscriber_name,
-    type: r.type as Account['type'],
-    lineStatus: r.line_status as Account['lineStatus'],
-    meterStatus: r.meter_status as Account['meterStatus'],
-    yearLastPayment: r.year_last_payment,
-    monthLastPayment: r.month_last_payment,
-    remainingBalance: r.remaining_balance,
-    previousReading: r.previous_reading,
-    currentMonthStatus: deriveStatus(r.remark, !!r.has_reading, r.consumption),
-  }));
+  return rows.map(mapAccount);
 }
 
 export function searchAllAccounts(query: string): Account[] {
   const db = getDb();
   const month = currentMonth();
 
-  const rows = db.getAllSync<{
-    id: number;
-    barangay_id: number;
-    barangay_name: string;
-    subscriber_name: string;
-    type: string;
-    line_status: string;
-    meter_status: string;
-    year_last_payment: string | null;
-    month_last_payment: string | null;
-    remaining_balance: number | null;
-    previous_reading: number | null;
-    remark: string | null;
-    consumption: number | null;
-    has_reading: number;
-  }>(`
-    SELECT
-      a.*,
-      b.name AS barangay_name,
-      r.remark,
-      r.consumption,
-      CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
-    FROM accounts a
-    JOIN barangays b ON b.id = a.barangay_id
-    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
-    WHERE a.subscriber_name LIKE ?
-    ORDER BY a.subscriber_name ASC
-  `, [month, `%${query}%`]);
+  const rows = db.getAllSync<AccountRow>(
+    `${ACCOUNT_SELECT}
+     WHERE a.subscriber_name LIKE ?
+     ORDER BY a.subscriber_name ASC, a.id ASC`,
+    [month, month, `%${query}%`]
+  );
 
-  return rows.map((r) => ({
-    id: r.id,
-    barangayId: r.barangay_id,
-    barangayName: r.barangay_name,
-    subscriberName: r.subscriber_name,
-    type: r.type as Account['type'],
-    lineStatus: r.line_status as Account['lineStatus'],
-    meterStatus: r.meter_status as Account['meterStatus'],
-    yearLastPayment: r.year_last_payment,
-    monthLastPayment: r.month_last_payment,
-    remainingBalance: r.remaining_balance,
-    previousReading: r.previous_reading,
-    currentMonthStatus: deriveStatus(r.remark, !!r.has_reading, r.consumption),
-  }));
+  return rows.map(mapAccount);
 }
 
 export function getAccount(accountId: number): Account | null {
   const db = getDb();
   const month = currentMonth();
 
-  const row = db.getFirstSync<{
-    id: number;
-    barangay_id: number;
-    barangay_name: string;
-    subscriber_name: string;
-    type: string;
-    line_status: string;
-    meter_status: string;
-    year_last_payment: string | null;
-    month_last_payment: string | null;
-    remaining_balance: number | null;
-    previous_reading: number | null;
-    remark: string | null;
-    consumption: number | null;
-    has_reading: number;
-  }>(`
-    SELECT
-      a.*,
-      b.name AS barangay_name,
-      r.remark,
-      r.consumption,
-      CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END AS has_reading
-    FROM accounts a
-    JOIN barangays b ON b.id = a.barangay_id
-    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
-    WHERE a.id = ?
-  `, [month, accountId]);
+  const row = db.getFirstSync<AccountRow>(
+    `${ACCOUNT_SELECT}
+     WHERE a.id = ?`,
+    [month, month, accountId]
+  );
 
-  if (!row) return null;
-
-  return {
-    id: row.id,
-    barangayId: row.barangay_id,
-    barangayName: row.barangay_name,
-    subscriberName: row.subscriber_name,
-    type: row.type as Account['type'],
-    lineStatus: row.line_status as Account['lineStatus'],
-    meterStatus: row.meter_status as Account['meterStatus'],
-    yearLastPayment: row.year_last_payment,
-    monthLastPayment: row.month_last_payment,
-    remainingBalance: row.remaining_balance,
-    previousReading: row.previous_reading,
-    currentMonthStatus: deriveStatus(row.remark, !!row.has_reading, row.consumption),
-  };
+  return row ? mapAccount(row) : null;
 }
 
 export function updateAccountStatus(accountId: number, lineStatus: string, meterStatus: string): void {
@@ -229,17 +230,32 @@ export function updateAccountStatus(accountId: number, lineStatus: string, meter
   db.runSync('UPDATE accounts SET line_status = ?, meter_status = ? WHERE id = ?', [lineStatus, meterStatus, accountId]);
 }
 
+// `previousReading` here is the account's OPENING reading (used only for the
+// first month that has no earlier reading). `remarks` is left alone when omitted.
 export function updateAccountDetails(accountId: number, params: {
   subscriberName: string;
   lineStatus: string;
   meterStatus: string;
   previousReading: number | null;
+  remarks?: string | null;
 }): void {
   const db = getDb();
+  const old = db.getFirstSync<{ previous_reading: number | null }>(
+    'SELECT previous_reading FROM accounts WHERE id = ?',
+    [accountId]
+  );
+
   db.runSync(
     'UPDATE accounts SET subscriber_name = ?, line_status = ?, meter_status = ?, previous_reading = ? WHERE id = ?',
     [params.subscriberName, params.lineStatus, params.meterStatus, params.previousReading, accountId]
   );
+  if (params.remarks !== undefined) {
+    db.runSync('UPDATE accounts SET remarks = ? WHERE id = ?', [params.remarks, accountId]);
+  }
+
+  if ((old?.previous_reading ?? null) !== params.previousReading) {
+    rechainAfter(accountId, '');
+  }
 }
 
 export function createAccount(params: {
@@ -248,14 +264,37 @@ export function createAccount(params: {
   type: string;
   lineStatus: string;
   meterStatus: string;
+  previousReading?: number | null;
+  remarks?: string | null;
 }): number {
   const db = getDb();
   db.runSync(
-    'INSERT INTO accounts (barangay_id, subscriber_name, type, line_status, meter_status) VALUES (?, ?, ?, ?, ?)',
-    [params.barangayId, params.subscriberName, params.type, params.lineStatus, params.meterStatus]
+    `INSERT INTO accounts (barangay_id, subscriber_name, type, line_status, meter_status, previous_reading, remarks)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      params.barangayId,
+      params.subscriberName,
+      params.type,
+      params.lineStatus,
+      params.meterStatus,
+      params.previousReading ?? null,
+      params.remarks ?? null,
+    ]
   );
   const row = db.getFirstSync<{ id: number }>('SELECT last_insert_rowid() AS id');
   return row!.id;
+}
+
+// True when another account in the same barangay already has this exact name
+// (case-insensitive, trimmed). Used to WARN on add; duplicates are allowed.
+export function countAccountsWithName(barangayId: number, name: string): number {
+  const db = getDb();
+  const row = db.getFirstSync<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM accounts
+     WHERE barangay_id = ? AND TRIM(subscriber_name) = TRIM(?) COLLATE NOCASE`,
+    [barangayId, name]
+  );
+  return row?.n ?? 0;
 }
 
 export function deleteAccount(accountId: number): void {
@@ -277,52 +316,20 @@ export function createBarangay(name: string): number {
 }
 
 // --- Readings ------------------------------------------------------------
-export function getReadingsForAccount(accountId: number): Reading[] {
-  const db = getDb();
-  const rows = db.getAllSync<{
-    id: number;
-    account_id: number;
-    month: string;
-    previous_reading: number | null;
-    present_reading: number | null;
-    consumption: number | null;
-    remark: string | null;
-    notes: string | null;
-    recorded_by: string | null;
-    date_recorded: string | null;
-  }>('SELECT * FROM readings WHERE account_id = ? ORDER BY month DESC', [accountId]);
-
-  return rows.map((r) => ({
-    id: r.id,
-    accountId: r.account_id,
-    month: r.month,
-    previousReading: r.previous_reading,
-    presentReading: r.present_reading,
-    consumption: r.consumption,
-    remark: r.remark as Reading['remark'],
-    notes: r.notes,
-    recordedBy: r.recorded_by,
-    dateRecorded: r.date_recorded,
-  }));
+interface ReadingRow {
+  id: number;
+  account_id: number;
+  month: string;
+  previous_reading: number | null;
+  present_reading: number | null;
+  consumption: number | null;
+  remark: string | null;
+  notes: string | null;
+  recorded_by: string | null;
+  date_recorded: string | null;
 }
 
-export function getReading(readingId: number): Reading | null {
-  const db = getDb();
-  const r = db.getFirstSync<{
-    id: number;
-    account_id: number;
-    month: string;
-    previous_reading: number | null;
-    present_reading: number | null;
-    consumption: number | null;
-    remark: string | null;
-    notes: string | null;
-    recorded_by: string | null;
-    date_recorded: string | null;
-  }>('SELECT * FROM readings WHERE id = ?', [readingId]);
-
-  if (!r) return null;
-
+function mapReading(r: ReadingRow): Reading {
   return {
     id: r.id,
     accountId: r.account_id,
@@ -337,6 +344,25 @@ export function getReading(readingId: number): Reading | null {
   };
 }
 
+export function getReadingsForAccount(accountId: number): Reading[] {
+  const db = getDb();
+  const rows = db.getAllSync<ReadingRow>(
+    'SELECT * FROM readings WHERE account_id = ? ORDER BY month DESC',
+    [accountId]
+  );
+  return rows.map(mapReading);
+}
+
+export function getReading(readingId: number): Reading | null {
+  const db = getDb();
+  const r = db.getFirstSync<ReadingRow>('SELECT * FROM readings WHERE id = ?', [readingId]);
+  return r ? mapReading(r) : null;
+}
+
+// Saves (or replaces) the reading for an account + month. The caller should pass
+// previousReading = getPreviousReading(accountId, month). Saving no longer
+// overwrites the account's opening reading; instead the next later reading is
+// re-chained so its previous/consumption stay correct.
 export function saveReading(params: {
   accountId: number;
   month: string;
@@ -374,25 +400,20 @@ export function saveReading(params: {
     now,
   ]);
 
-  if (params.presentReading !== null) {
-    db.runSync('UPDATE accounts SET previous_reading = ? WHERE id = ?', [params.presentReading, params.accountId]);
-  }
+  rechainAfter(params.accountId, params.month);
 }
 
 export function deleteReading(accountId: number, month: string): void {
   const db = getDb();
   db.runSync('DELETE FROM readings WHERE account_id = ? AND month = ?', [accountId, month]);
+  rechainAfter(accountId, month);
 }
 
 export function markNoReading(accountId: number, month: string, recordedBy: string | null): void {
-  const db = getDb();
-  const prev = db.getFirstSync<{ previous_reading: number | null }>(
-    'SELECT previous_reading FROM accounts WHERE id = ?', [accountId]
-  );
   saveReading({
     accountId,
     month,
-    previousReading: prev?.previous_reading ?? null,
+    previousReading: getPreviousReading(accountId, month),
     presentReading: null,
     consumption: null,
     remark: 'No reading',
@@ -401,81 +422,16 @@ export function markNoReading(accountId: number, month: string, recordedBy: stri
   });
 }
 
-// --- Import --------------------------------------------------------------
-export function upsertBarangay(name: string): number {
+// Years that have at least one saved reading (newest first), for the export year picker.
+export function getReadingYears(): number[] {
   const db = getDb();
-  db.runSync('INSERT OR IGNORE INTO barangays (name) VALUES (?)', [name]);
-  const row = db.getFirstSync<{ id: number }>('SELECT id FROM barangays WHERE name = ?', [name]);
-  return row!.id;
-}
-
-export function upsertAccount(params: {
-  barangayId: number;
-  subscriberName: string;
-  type: string;
-  lineStatus: string;
-  meterStatus: string;
-  yearLastPayment: string | null;
-  monthLastPayment: string | null;
-  remainingBalance: number | null;
-  previousReading: number | null;
-}): number {
-  const db = getDb();
-  db.runSync(`
-    INSERT INTO accounts
-      (barangay_id, subscriber_name, type, line_status, meter_status, year_last_payment, month_last_payment, remaining_balance, previous_reading)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(barangay_id, subscriber_name) DO UPDATE SET
-      type               = excluded.type,
-      line_status        = excluded.line_status,
-      meter_status       = excluded.meter_status,
-      year_last_payment  = excluded.year_last_payment,
-      month_last_payment = excluded.month_last_payment,
-      remaining_balance  = excluded.remaining_balance,
-      previous_reading   = excluded.previous_reading
-  `, [
-    params.barangayId,
-    params.subscriberName,
-    params.type,
-    params.lineStatus,
-    params.meterStatus,
-    params.yearLastPayment,
-    params.monthLastPayment,
-    params.remainingBalance,
-    params.previousReading,
-  ]);
-
-  const row = db.getFirstSync<{ id: number }>(
-    'SELECT id FROM accounts WHERE barangay_id = ? AND subscriber_name = ?',
-    [params.barangayId, params.subscriberName]
+  const rows = db.getAllSync<{ y: string }>(
+    'SELECT DISTINCT substr(month, 1, 4) AS y FROM readings ORDER BY y DESC'
   );
-  return row!.id;
+  return rows.map((r) => Number(r.y)).filter((y) => Number.isFinite(y));
 }
 
-export function updateAccountFields(accountId: number, params: {
-  lineStatus?: string;
-  meterStatus?: string;
-  yearLastPayment?: string | null;
-  monthLastPayment?: string | null;
-  remainingBalance?: number | null;
-  previousReading?: number | null;
-}): void {
-  const db = getDb();
-  const sets: string[] = [];
-  const vals: (string | number | null)[] = [];
-
-  if (params.lineStatus !== undefined) { sets.push('line_status = ?'); vals.push(params.lineStatus); }
-  if (params.meterStatus !== undefined) { sets.push('meter_status = ?'); vals.push(params.meterStatus); }
-  if (params.yearLastPayment !== undefined) { sets.push('year_last_payment = ?'); vals.push(params.yearLastPayment); }
-  if (params.monthLastPayment !== undefined) { sets.push('month_last_payment = ?'); vals.push(params.monthLastPayment); }
-  if (params.remainingBalance !== undefined) { sets.push('remaining_balance = ?'); vals.push(params.remainingBalance); }
-  if (params.previousReading !== undefined) { sets.push('previous_reading = ?'); vals.push(params.previousReading); }
-
-  if (sets.length === 0) return;
-  vals.push(accountId);
-  db.runSync(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, vals);
-}
-
+// --- Import log ------------------------------------------------------------
 export function logImport(filename: string, accountsLoaded: number, fileHash: string): void {
   const db = getDb();
   db.runSync(
@@ -500,71 +456,98 @@ export function isFileAlreadyImported(hash: string): boolean {
 }
 
 // --- Export ----------------------------------------------------------------
-// Matches the "WATER SUBSCRIBERS" sheet layout of WATER_SUBSCRIBER_REPORT.xlsx:
-// BARANGAY | SUBSCRIBER'S NAME | TYPE | LINE STATUS | WATER METER STATUS |
-// WATER METER READER | ISSUANCE OF DISCONNECTION | DATE OF ISSUANCE |
-// NOD DATE RECEIVED | DISCONNECTION DATE | DISCONNECTION STATUS | (blank) |
-// MONTH OF LAST PAYMENT | REMAINING BALANCE | REMARKS
-//
-// The disconnection-process columns (issuance, NOD date, disconnection date/
-// status) aren't tracked anywhere in this app's data model, so they're left
-// blank for the reader to fill in on paper/Excel. WATER METER READER is
-// filled from the 'reader_name' setting since that's already captured.
-export interface FullExportRow {
+// Everything the official workbook export needs, for one calendar year:
+// one entry per account, with the 12 PRESENT readings and January's PAST.
+// Months without a saved present reading are null (left blank in the sheet).
+export interface ExportAccount {
+  id: number;
   barangay: string;
   subscriberName: string;
   type: string;
   lineStatus: string;
   meterStatus: string;
-  meterReader: string;
+  yearLastPayment: string | null;
   monthLastPayment: string | null;
   remainingBalance: number | null;
   remarks: string | null;
+  januaryPast: number | null;
+  present: (number | null)[]; // index 0 = January ... 11 = December
 }
 
-export function getFullExportData(month: string, barangayId?: number): FullExportRow[] {
+export function getAccountsForExport(year: number, barangayId?: number): ExportAccount[] {
   const db = getDb();
-  const readerName = getSetting('reader_name') ?? '';
+  const first = `${year}-01`;
+  const last = `${year}-12`;
 
-  const params: (string | number)[] = [month];
+  const accParams: (string | number)[] = [first];
   let where = '';
   if (barangayId != null) {
     where = 'WHERE a.barangay_id = ?';
-    params.push(barangayId);
+    accParams.push(barangayId);
   }
 
-  const rows = db.getAllSync<{
+  const accounts = db.getAllSync<{
+    id: number;
     barangay_name: string;
     subscriber_name: string;
     type: string;
     line_status: string;
     meter_status: string;
+    year_last_payment: string | null;
     month_last_payment: string | null;
     remaining_balance: number | null;
-    remark: string | null;
+    remarks: string | null;
+    january_past: number | null;
   }>(`
     SELECT
-      b.name AS barangay_name,
-      a.subscriber_name, a.type, a.line_status, a.meter_status,
-      a.month_last_payment, a.remaining_balance,
-      r.remark
+      a.id, b.name AS barangay_name, a.subscriber_name, a.type, a.line_status, a.meter_status,
+      a.year_last_payment, a.month_last_payment, a.remaining_balance, a.remarks,
+      ${DERIVED_PREVIOUS_SQL} AS january_past
     FROM accounts a
     JOIN barangays b ON b.id = a.barangay_id
-    LEFT JOIN readings r ON r.account_id = a.id AND r.month = ?
     ${where}
-    ORDER BY b.name, a.subscriber_name
-  `, params);
+    ORDER BY b.name COLLATE NOCASE, a.subscriber_name COLLATE NOCASE, a.id
+  `, accParams);
 
-  return rows.map((r) => ({
-    barangay: r.barangay_name,
-    subscriberName: r.subscriber_name,
-    type: r.type,
-    lineStatus: r.line_status,
-    meterStatus: r.meter_status,
-    meterReader: readerName,
-    monthLastPayment: r.month_last_payment,
-    remainingBalance: r.remaining_balance,
-    remarks: r.remark,
+  const readParams: (string | number)[] = [first, last];
+  let readWhere = '';
+  if (barangayId != null) {
+    readWhere = 'AND a.barangay_id = ?';
+    readParams.push(barangayId);
+  }
+  const readings = db.getAllSync<{ account_id: number; month: string; present_reading: number }>(`
+    SELECT r.account_id, r.month, r.present_reading
+    FROM readings r
+    JOIN accounts a ON a.id = r.account_id
+    WHERE r.month >= ? AND r.month <= ? AND r.present_reading IS NOT NULL
+    ${readWhere}
+  `, readParams);
+
+  const byAccount = new Map<number, (number | null)[]>();
+  for (const r of readings) {
+    const idx = parseInt(r.month.slice(5, 7), 10) - 1;
+    if (idx < 0 || idx > 11) continue;
+    let arr = byAccount.get(r.account_id);
+    if (!arr) {
+      arr = new Array<number | null>(12).fill(null);
+      byAccount.set(r.account_id, arr);
+    }
+    arr[idx] = r.present_reading;
+  }
+
+  return accounts.map((a) => ({
+    id: a.id,
+    barangay: a.barangay_name,
+    subscriberName: a.subscriber_name,
+    type: a.type,
+    lineStatus: a.line_status,
+    meterStatus: a.meter_status,
+    yearLastPayment: a.year_last_payment,
+    monthLastPayment: a.month_last_payment,
+    remainingBalance: a.remaining_balance,
+    remarks: a.remarks,
+    januaryPast: a.january_past,
+    present: byAccount.get(a.id) ?? new Array<number | null>(12).fill(null),
   }));
 }
 

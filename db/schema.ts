@@ -29,6 +29,7 @@ export function initDb(): void {
       month_last_payment TEXT,
       remaining_balance REAL,
       previous_reading REAL,
+      remarks TEXT,
       FOREIGN KEY (barangay_id) REFERENCES barangays(id)
     );
 
@@ -68,19 +69,64 @@ export function initDb(): void {
     // column already exists, ignore
   }
 
-  // Migration: enforce uniqueness on accounts (barangay_id, subscriber_name).
-  // Using CREATE UNIQUE INDEX instead of ALTER TABLE so devices with existing
-  // data are not broken. If duplicate rows already exist, this will warn in
-  // the console but won't crash the app.
+  // Migration: free-text account remarks (the REMARKS column of the official workbook)
+  try {
+    database.execSync(`ALTER TABLE accounts ADD COLUMN remarks TEXT`);
+  } catch {
+    // column already exists, ignore
+  }
+
+  // Migration: two subscribers may legitimately share a name (the official
+  // workbook has such pairs), so name can no longer be a unique key. Account
+  // `id` is the identity. Drop the old unique index if an earlier version
+  // created it, and keep a plain (non-unique) index for fast name lookups.
+  try {
+    database.execSync(`DROP INDEX IF EXISTS idx_accounts_barangay_name`);
+  } catch {
+    console.warn('[initDb] Could not drop idx_accounts_barangay_name');
+  }
   try {
     database.execSync(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_barangay_name
+      CREATE INDEX IF NOT EXISTS idx_accounts_barangay_name_lookup
       ON accounts (barangay_id, subscriber_name);
     `);
   } catch {
-    console.warn(
-      '[initDb] Could not create unique index on accounts — duplicate rows may exist. ' +
-      'A dedup may be needed before re-importing.'
+    console.warn('[initDb] Could not create lookup index on accounts');
+  }
+
+  // Migration (runs once): readings now store PRESENT only and "previous" is
+  // derived from the earlier month. accounts.previous_reading therefore means
+  // "opening reading" (used only when an account has no earlier reading).
+  // Before this change it was overwritten with the latest present reading on
+  // every save, so restore it from the earliest saved reading's own previous
+  // value, where one exists.
+  try {
+    const done = database.getFirstSync<{ value: string }>(
+      `SELECT value FROM settings WHERE key = 'migrated_opening_reading_v1'`
     );
+    if (!done) {
+      database.execSync(`
+        UPDATE accounts
+        SET previous_reading = (
+          SELECT r.previous_reading
+          FROM readings r
+          WHERE r.account_id = accounts.id
+          ORDER BY r.month ASC
+          LIMIT 1
+        )
+        WHERE (
+          SELECT r.previous_reading
+          FROM readings r
+          WHERE r.account_id = accounts.id
+          ORDER BY r.month ASC
+          LIMIT 1
+        ) IS NOT NULL;
+      `);
+      database.runSync(
+        `INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_opening_reading_v1', '1')`
+      );
+    }
+  } catch {
+    console.warn('[initDb] Opening-reading migration failed; will retry on next launch');
   }
 }

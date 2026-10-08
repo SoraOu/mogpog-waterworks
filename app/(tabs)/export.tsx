@@ -13,48 +13,20 @@ import {
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from 'expo-router';
-import * as XLSX from 'xlsx';
 import {
+  getAccountsForExport,
   getAllBarangaysForExport,
-  getFullExportData,
   getOverallProgress,
+  getReadingYears,
   currentMonth,
-  getSetting,
 } from '../../db/queries';
+import { buildOfficialWorkbook } from '../../excel/exportWorkbook';
+import { bytesToBase64 } from '../../excel/base64';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
 type BarangayMeta = { id: number; name: string };
 
-// Column order matches the "WATER SUBSCRIBERS" sheet in
-// WATER_SUBSCRIBER_REPORT.xlsx exactly, including the blank spacer column
-// between DISCONNECTION STATUS and MONTH OF LAST PAYMENT.
-const TEMPLATE_HEADERS = [
-  'BARANGAY',
-  "SUBSCRIBER'S NAME",
-  'TYPE',
-  'LINE STATUS',
-  'WATER METER STATUS',
-  'WATER METER READER',
-  'ISSUANCE OF DISCONNECTION',
-  'DATE OF ISSUANCE',
-  'NOD DATE RECEIVED',
-  'DISCONNECTION DATE',
-  'DISCONNECTION STATUS',
-  '',
-  'MONTH OF LAST PAYMENT',
-  'REMAINING BALANCE',
-  'REMARKS',
-];
-const TEMPLATE_SHEET_NAME = 'WATER SUBSCRIBERS';
-
-function generateMonthOptions(): string[] {
-  const year = new Date().getFullYear();
-  const months: string[] = [];
-  for (let m = 1; m <= 12; m++) {
-    months.push(`${year}-${String(m).padStart(2, '0')}`);
-  }
-  return months;
-}
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 function monthLabel(m: string): string {
   const [y, mo] = m.split('-');
@@ -62,102 +34,55 @@ function monthLabel(m: string): string {
   return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
 }
 
+function yearOptions(): number[] {
+  const now = new Date().getFullYear();
+  const set = new Set<number>([now, now - 1, ...getReadingYears()]);
+  return Array.from(set).sort((a, b) => b - a);
+}
+
 export default function ExportScreen() {
   const [barangays, setBarangays] = useState<BarangayMeta[]>([]);
   const [progress, setProgress] = useState({ total: 0, done: 0 });
   const [loading, setLoading] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth());
-  const [showMonthPicker, setShowMonthPicker] = useState(false);
-  const monthOptions = generateMonthOptions();
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [showYearPicker, setShowYearPicker] = useState(false);
+  const [years, setYears] = useState<number[]>([]);
+  const month = currentMonth();
 
   const load = useCallback(() => {
     setBarangays(getAllBarangaysForExport());
-    setProgress(getOverallProgress(selectedMonth));
-  }, [selectedMonth]);
+    setProgress(getOverallProgress(currentMonth()));
+    setYears(yearOptions());
+  }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  // barangayId omitted => rows for every barangay, in one sheet, matching
-  // the master WATER SUBSCRIBERS tab of the template workbook.
-  function buildTemplateSheet(barangayId?: number) {
-    const rows = getFullExportData(selectedMonth, barangayId);
-    const aoa: (string | number)[][] = [TEMPLATE_HEADERS];
-    for (const r of rows) {
-      aoa.push([
-        r.barangay,
-        r.subscriberName,
-        r.type,
-        r.lineStatus,
-        r.meterStatus,
-        r.meterReader,
-        '', // Issuance of Disconnection — not tracked in-app
-        '', // Date of Issuance — not tracked in-app
-        '', // NOD Date Received — not tracked in-app
-        '', // Disconnection Date — not tracked in-app
-        '', // Disconnection Status — not tracked in-app
-        '', // blank spacer column (matches template)
-        r.monthLastPayment ?? '',
-        r.remainingBalance ?? '',
-        r.remarks ?? '',
-      ]);
-    }
-    return XLSX.utils.aoa_to_sheet(aoa);
-  }
-
-  async function exportBarangay(barangay: BarangayMeta) {
-    if (progress.done === 0) {
-      Alert.alert(
-        'No data for this month',
-        `No readings recorded for ${monthLabel(selectedMonth)}. Select a different month or record readings first.`
-      );
-      return;
-    }
-    setLoading(barangay.name);
+  // barangay omitted => every subscriber, in one file
+  async function doExport(key: string, barangay?: BarangayMeta) {
+    setLoading(key);
     try {
-      const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
-      const safeName = readerName.replace(/\s+/g, '_');
-      const wb = XLSX.utils.book_new();
-      const ws = buildTemplateSheet(barangay.id);
-      XLSX.utils.book_append_sheet(wb, ws, TEMPLATE_SHEET_NAME);
-      const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const filename = `${safeName}_${barangay.name.replace(/\s+/g, '_')}_${selectedMonth}.xlsx`;
+      // let the spinner render before the heavy synchronous work
+      await new Promise((r) => setTimeout(r, 50));
+
+      const accounts = getAccountsForExport(selectedYear, barangay?.id);
+      if (accounts.length === 0) {
+        Alert.alert('Nothing to export', 'There are no subscribers to export yet.');
+        return;
+      }
+
+      const bytes = buildOfficialWorkbook(accounts, selectedYear);
+      const b64 = bytesToBase64(bytes);
+
+      const safeBarangay = barangay ? '_' + barangay.name.replace(/[^A-Za-z0-9]+/g, '_') : '';
+      const filename = `WATER_READING_SYSTEM${safeBarangay}_${selectedYear}.xlsx`;
       const path = FileSystem.cacheDirectory + filename;
       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
       await Sharing.shareAsync(path, {
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        dialogTitle: `Export – ${barangay.name}`,
+        mimeType: XLSX_MIME,
+        dialogTitle: barangay ? `Export – ${barangay.name}` : 'Export – All Barangays',
       });
     } catch (e) {
-      Alert.alert('Export failed', String(e));
-    } finally {
-      setLoading(null);
-    }
-  }
-
-  async function exportAll() {
-    if (progress.done === 0) {
-      Alert.alert(
-        'No data for this month',
-        `No readings recorded for ${monthLabel(selectedMonth)}. Select a different month or record readings first.`
-      );
-      return;
-    }
-    setLoading('all');
-    try {
-      const readerName = getSetting('reader_name') ?? 'Mogpog_Waterworks';
-      const safeName = readerName.replace(/\s+/g, '_');
-      const wb = XLSX.utils.book_new();
-      const ws = buildTemplateSheet(); // no barangayId => every barangay, one sheet
-      XLSX.utils.book_append_sheet(wb, ws, TEMPLATE_SHEET_NAME);
-      const b64 = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const filename = `${safeName}_All_Barangays_${selectedMonth}.xlsx`;
-      const path = FileSystem.cacheDirectory + filename;
-      await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
-      await Sharing.shareAsync(path, {
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        dialogTitle: 'Export – All Barangays',
-      });
-    } catch (e) {
+      console.error(e);
       Alert.alert('Export failed', String(e));
     } finally {
       setLoading(null);
@@ -168,18 +93,22 @@ export default function ExportScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Month picker */}
+      {/* Year picker */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Export Month</Text>
-        <TouchableOpacity style={styles.monthBtn} onPress={() => setShowMonthPicker(true)}>
-          <Text style={styles.monthBtnText}>{monthLabel(selectedMonth)}</Text>
+        <Text style={styles.cardTitle}>Export Year</Text>
+        <Text style={styles.hint}>
+          The file is the official WATER READING SYSTEM workbook: all 12 months of the year, with the
+          workbook's own formulas for CU.M USED and AMOUNT.
+        </Text>
+        <TouchableOpacity style={styles.monthBtn} onPress={() => setShowYearPicker(true)}>
+          <Text style={styles.monthBtnText}>{selectedYear}</Text>
           <Text style={styles.monthBtnChevron}>▾</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Overall progress */}
+      {/* Overall progress (current month) */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Progress – {monthLabel(selectedMonth)}</Text>
+        <Text style={styles.cardTitle}>Progress – {monthLabel(month)}</Text>
         <View style={styles.progressRow}>
           <Text style={styles.progressLabel}>{progress.done} / {progress.total} accounts read</Text>
           <Text style={styles.pct}>{pct}%</Text>
@@ -192,7 +121,7 @@ export default function ExportScreen() {
       {/* Export all */}
       <TouchableOpacity
         style={[styles.exportAllBtn, loading === 'all' && styles.btnDisabled]}
-        onPress={exportAll}
+        onPress={() => doExport('all')}
         disabled={!!loading || barangays.length === 0}
         activeOpacity={0.8}
       >
@@ -212,7 +141,7 @@ export default function ExportScreen() {
           <TouchableOpacity
             key={b.id}
             style={[styles.barangayRow, loading === b.name && styles.btnDisabled]}
-            onPress={() => exportBarangay(b)}
+            onPress={() => doExport(b.name, b)}
             disabled={!!loading}
             activeOpacity={0.7}
           >
@@ -225,28 +154,28 @@ export default function ExportScreen() {
         ))}
       </View>
 
-      {/* Month picker modal */}
+      {/* Year picker modal */}
       <Modal
-        visible={showMonthPicker}
+        visible={showYearPicker}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowMonthPicker(false)}
+        onRequestClose={() => setShowYearPicker(false)}
       >
-        <Pressable style={styles.overlay} onPress={() => setShowMonthPicker(false)} />
+        <Pressable style={styles.overlay} onPress={() => setShowYearPicker(false)} />
         <View style={styles.sheet}>
           <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Select Month</Text>
+          <Text style={styles.sheetTitle}>Select Year</Text>
           <ScrollView>
-            {monthOptions.map((m) => (
+            {years.map((y) => (
               <TouchableOpacity
-                key={m}
-                style={[styles.monthOption, m === selectedMonth && styles.monthOptionActive]}
-                onPress={() => { setSelectedMonth(m); setShowMonthPicker(false); }}
+                key={y}
+                style={[styles.monthOption, y === selectedYear && styles.monthOptionActive]}
+                onPress={() => { setSelectedYear(y); setShowYearPicker(false); }}
               >
-                <Text style={[styles.monthOptionText, m === selectedMonth && styles.monthOptionTextActive]}>
-                  {monthLabel(m)}
+                <Text style={[styles.monthOptionText, y === selectedYear && styles.monthOptionTextActive]}>
+                  {y}
                 </Text>
-                {m === selectedMonth && <Text style={styles.checkmark}>✓</Text>}
+                {y === selectedYear && <Text style={styles.checkmark}>✓</Text>}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -268,6 +197,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
   },
   cardTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  hint: { fontSize: FontSize.sm, color: Colors.textSecondary, lineHeight: 20 },
   monthBtn: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -1,0 +1,2026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mogpog-waterworks — Complete Call Flow &amp; Architecture Documentation</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+  --warn: #fbbf24; --err: #f87171; --ok: #34d399;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+.container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 2.4rem; margin-bottom: 8px; background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h2 { font-size: 1.7rem; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+h3 { font-size: 1.25rem; margin: 32px 0 12px; color: var(--accent); }
+h4 { font-size: 1.05rem; margin: 20px 0 8px; color: var(--warn); }
+p { margin: 8px 0; color: var(--muted); }
+.subtitle { color: var(--muted); font-size: 1.1rem; margin-bottom: 32px; }
+.mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; overflow-x: auto; position: relative; }
+.mermaid.is-enhanced { padding: 0; overflow: hidden; min-height: 260px; }
+.mermaid-viewport { padding: 54px 24px 24px; overflow: hidden; cursor: grab; touch-action: none; min-height: 260px; }
+.mermaid-viewport.is-dragging { cursor: grabbing; }
+.mermaid-viewport svg { max-width: none !important; height: auto; transform-origin: 0 0; transition: transform 120ms ease; }
+.mermaid-toolbar { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; align-items: center; gap: 6px; padding: 6px; background: rgba(15,23,42,0.92); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.28); }
+.mermaid-toolbar button, .mermaid-toolbar .zoom-level { height: 28px; min-width: 32px; border: 1px solid var(--border); border-radius: 6px; background: #1e293b; color: var(--text); font: 600 0.78rem system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+.mermaid-toolbar button { cursor: pointer; }
+.mermaid-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+.mermaid-toolbar .zoom-level { min-width: 52px; color: var(--muted); background: transparent; }
+.call-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 0.92rem; }
+.call-table th { background: #1a2744; color: var(--accent); text-align: left; padding: 10px 14px; border: 1px solid var(--border); }
+.call-table td { padding: 8px 14px; border: 1px solid var(--border); vertical-align: top; }
+.call-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+.tag-async { background: #7c3aed33; color: #a78bfa; }
+.tag-class { background: #05966933; color: var(--ok); }
+.tag-func { background: #2563eb33; color: var(--accent); }
+.tag-cmd { background: #d9770633; color: var(--warn); }
+.tag-endpoint { background: #dc262633; color: var(--err); }
+.tag-hook { background: #db277733; color: #f472b6; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin: 16px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+.arrow-chain { font-family: 'Fira Code', monospace; font-size: 0.85rem; color: var(--accent); padding: 10px; background: rgba(56,189,248,0.06); border-radius: 6px; }
+code { font-family: 'Fira Code', 'Cascadia Code', monospace; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 0.88em; }
+ul, ol { margin: 8px 0 8px 24px; color: var(--muted); }
+li { margin: 4px 0; }
+a { color: var(--accent); }
+hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+.nav { position: sticky; top: 0; background: var(--bg); z-index: 10; padding: 12px 0; border-bottom: 1px solid var(--border); display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.9rem; }
+.nav a { text-decoration: none; }
+.nav a:hover { text-decoration: underline; }
+@media (max-width: 768px) { .container { padding: 16px; } h1 { font-size: 1.8rem; } }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>mogpog-waterworks — Complete Call Flow &amp; Architecture Documentation</h1>
+<p class="subtitle">Generated from graphify knowledge graph: 219 nodes, 506 edges, 10 communities. Commit: 7540e8d</p>
+
+<div class="nav">
+    <a href="#overview">Architecture Overview</a>
+    <a href="#build-graph">Graph Build</a>
+    <a href="#outputs-docs">Outputs &amp; Docs</a>
+    <a href="#queriests-idtsx-app">Queriests Idtsx App</a>
+    <a href="#types-indexts-account">Types Indexts Account</a>
+    <a href="#account-idtsx-app">Account Idtsx App</a>
+    <a href="#importtsx-app-tabs">Importtsx App Tabs</a>
+</div>
+
+<!-- ====== Architecture Overview ====== -->
+<h2 id="overview">1. Architecture Overview</h2>
+
+<div class="mermaid">
+
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    BUILD_GRAPH_321CBB04("Graph Build<br/><small>116 nodes</small>")
+    class BUILD_GRAPH_321CBB04 module;
+    OUTPUTS_DOCS_ED82387C("Outputs &amp; Docs<br/><small>15 nodes</small>")
+    class OUTPUTS_DOCS_ED82387C module;
+    QUERIESTS_IDTSX_APP_8B4E8DBB("Queriests Idtsx App<br/><small>31 nodes</small>")
+    class QUERIESTS_IDTSX_APP_8B4E8DBB module;
+    TYPES_INDEXTS_ACCOUNT_19ABCC7E("Types Indexts Account<br/><small>19 nodes</small>")
+    class TYPES_INDEXTS_ACCOUNT_19ABCC7E module;
+    ACCOUNT_IDTSX_APP_E3E72F92("Account Idtsx App<br/><small>19 nodes</small>")
+    class ACCOUNT_IDTSX_APP_E3E72F92 module;
+    IMPORTTSX_APP_TABS_A0944D45("Importtsx App Tabs<br/><small>19 nodes</small>")
+    class IMPORTTSX_APP_TABS_A0944D45 module;
+    BUILD_GRAPH_321CBB04 -->|calls x18| QUERIESTS_IDTSX_APP_8B4E8DBB
+    QUERIESTS_IDTSX_APP_8B4E8DBB -->|imports x16| BUILD_GRAPH_321CBB04
+    TYPES_INDEXTS_ACCOUNT_19ABCC7E -->|imports x10| BUILD_GRAPH_321CBB04
+    ACCOUNT_IDTSX_APP_E3E72F92 -->|imports x10| BUILD_GRAPH_321CBB04
+    IMPORTTSX_APP_TABS_A0944D45 -->|imports x10| BUILD_GRAPH_321CBB04
+    QUERIESTS_IDTSX_APP_8B4E8DBB -->|imports x9| TYPES_INDEXTS_ACCOUNT_19ABCC7E
+    OUTPUTS_DOCS_ED82387C -->|imports x9| BUILD_GRAPH_321CBB04
+    ACCOUNT_IDTSX_APP_E3E72F92 -->|calls x8| QUERIESTS_IDTSX_APP_8B4E8DBB
+    OUTPUTS_DOCS_ED82387C -->|calls x8| QUERIESTS_IDTSX_APP_8B4E8DBB
+    BUILD_GRAPH_321CBB04 -->|imports x7| OUTPUTS_DOCS_ED82387C
+    QUERIESTS_IDTSX_APP_8B4E8DBB -->|calls x7| OUTPUTS_DOCS_ED82387C
+    BUILD_GRAPH_321CBB04 -->|imports x7| TYPES_INDEXTS_ACCOUNT_19ABCC7E
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h4>Architecture Layers</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
+      <tr><td>Graph Build</td><td>116</td><td><code>0, 2, 3, 8, 9</code></td></tr><tr><td>Outputs &amp; Docs</td><td>15</td><td><code>7</code></td></tr><tr><td>Queriests Idtsx App</td><td>31</td><td><code>1</code></td></tr><tr><td>Types Indexts Account</td><td>19</td><td><code>4</code></td></tr><tr><td>Account Idtsx App</td><td>19</td><td><code>5</code></td></tr><tr><td>Importtsx App Tabs</td><td>19</td><td><code>6</code></td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Core Flow</h4>
+    <div class="arrow-chain">Importtsx App Tabs -&gt; Graph Build -&gt; Queriests Idtsx App -&gt; Types Indexts Account -&gt; Outputs &amp; Docs -&gt; Account Idtsx App</div>
+  </div>
+</div>
+<hr>
+<!-- ====== 2. Graph Build ====== -->
+<h2 id="build-graph">2. Graph Build</h2>
+<p>Graph Build groups implementation around packagejson, appjson, expo, app, mostly in package.json, app.json, components/BarangayRow.tsx. This section covers 116 nodes and 181 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Graph Build (116 nodes, 181 edges)
+    subgraph build_graph_app_tabs_index_tsx_cdc53b7a["app/(tabs)/index.tsx"]
+        app_tabs_index_422a956d("index.tsx")
+        app_tabs_index_homescreen_a7268429("HomeScreen()<br/><small>app/(tabs)/index.tsx</small>")
+        app_tabs_index_homescreen_handlequerychange_83f0829c("handleQueryChange()<br/><small>app/(tabs)/index.tsx</small>")
+    end
+    subgraph build_graph_app_settings_index_tsx_3f07de05["app/settings/index.tsx"]
+        app_settings_index_9e0836fa("index.tsx")
+        app_settings_index_settingsscreen_2d9fdba9("SettingsScreen()<br/><small>app/settings/index.tsx</small>")
+        app_settings_index_settingsscreen_handlesave_ea2c287b("handleSave()<br/><small>app/settings/index.tsx</small>")
+    end
+    subgraph build_graph_components_BarangayRow_tsx_cac3a931["components/BarangayRow.tsx"]
+        components_barangayrow_ff51727e("BarangayRow.tsx")
+        components_barangayrow_barangayrow_a79f7e80("BarangayRow()<br/><small>components/BarangayRow.tsx</small>")
+        components_barangayrow_progresslabel_473e663d("progressLabel()<br/><small>components/BarangayRow.tsx</small>")
+    end
+    subgraph build_graph_db_queries_ts_4e49435b["db/queries.ts"]
+        db_queries_setsetting_68b41c8c("setSetting()<br/><small>db/queries.ts</small>")
+        db_queries_getallbarangays_3367e834("getAllBarangays()<br/><small>db/queries.ts</small>")
+        db_queries_searchallaccounts_93b381dc("searchAllAccounts()<br/><small>db/queries.ts</small>")
+    end
+    subgraph build_graph_app_tabs_layout_tsx_b7debe59["app/(tabs)/_layout.tsx"]
+        app_tabs_layout_tablayout_f61c4cb1("TabLayout()<br/><small>app/(tabs)/_layout.tsx</small>")
+        app_tabs_layout_tabicon_d2e22c91("TabIcon()<br/><small>app/(tabs)/_layout.tsx</small>")
+    end
+    subgraph build_graph_components_AccountRow_tsx_52240537["components/AccountRow.tsx"]
+        components_accountrow_d87853ee("AccountRow.tsx")
+        components_accountrow_accountrow_016d4e84("AccountRow()<br/><small>components/AccountRow.tsx</small>")
+    end
+    app_barangay_id_33d8c12a("[id].tsx")
+    package_582681c2("package.json")
+    app_settings_index_settingsscreen_2d9fdba9 -->|calls| db_queries_setsetting_68b41c8c
+    app_settings_index_settingsscreen_handlesave_ea2c287b -->|calls| db_queries_setsetting_68b41c8c
+    app_tabs_index_homescreen_a7268429 -->|calls| components_barangayrow_barangayrow_a79f7e80
+    app_tabs_index_homescreen_a7268429 -->|calls| components_accountrow_accountrow_016d4e84
+    app_tabs_index_homescreen_a7268429 -->|calls| db_queries_getallbarangays_3367e834
+    app_tabs_index_homescreen_a7268429 -->|calls| db_queries_searchallaccounts_93b381dc
+    app_tabs_index_homescreen_handlequerychange_83f0829c -->|calls| db_queries_searchallaccounts_93b381dc
+    app_tabs_layout_tablayout_f61c4cb1 -->|calls| app_tabs_layout_tabicon_d2e22c91
+    components_barangayrow_barangayrow_a79f7e80 -->|calls| components_barangayrow_progresslabel_473e663d
+    app_barangay_id_33d8c12a -->|imports| components_accountrow_accountrow_016d4e84
+    app_barangay_id_33d8c12a -->|imports| components_accountrow_d87853ee
+    app_settings_index_9e0836fa -->|imports| db_queries_setsetting_68b41c8c
+    app_tabs_index_422a956d -->|imports| db_queries_getallbarangays_3367e834
+    app_tabs_index_422a956d -->|imports| db_queries_searchallaccounts_93b381dc
+    app_tabs_index_422a956d -->|imports| components_barangayrow_barangayrow_a79f7e80
+    app_tabs_index_422a956d -->|imports| components_accountrow_accountrow_016d4e84
+    app_tabs_index_422a956d -->|imports| components_barangayrow_ff51727e
+    app_tabs_index_422a956d -->|imports| components_accountrow_d87853ee
+    %% Omitted for readability: 98 nodes, 0 edges
+    class app_tabs_index_422a956d ui;
+    class app_tabs_index_homescreen_a7268429 ui;
+    class app_tabs_index_homescreen_handlequerychange_83f0829c ui;
+    class app_settings_index_9e0836fa ui;
+    class app_settings_index_settingsscreen_2d9fdba9 ui;
+    class app_settings_index_settingsscreen_handlesave_ea2c287b ui;
+    class components_barangayrow_ff51727e ui;
+    class components_barangayrow_barangayrow_a79f7e80 ui;
+    class components_barangayrow_progresslabel_473e663d ui;
+    class db_queries_setsetting_68b41c8c function;
+    class db_queries_getallbarangays_3367e834 function;
+    class db_queries_searchallaccounts_93b381dc function;
+    class app_tabs_layout_tablayout_f61c4cb1 ui;
+    class app_tabs_layout_tabicon_d2e22c91 ui;
+    class components_accountrow_d87853ee ui;
+    class components_accountrow_accountrow_016d4e84 ui;
+    class app_barangay_id_33d8c12a ui;
+    class package_582681c2 function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>SearchMode</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>SearchMode node in app/(tabs)/index.tsx.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>Props</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Props node in components/AccountRow.tsx.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>Props</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Props node in components/BarangayRow.tsx.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>Account</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br>+3 more</td>
+  <td>No direct outbound edge</td>
+  <td>Account node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>Barangay</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>BarangayRow.tsx</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small><br><code>index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small><br><code>queries.ts</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>Barangay node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>SettingsScreen()</code><br><small style="color:var(--muted)">app/settings/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>setSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>SettingsScreen() node in app/settings/index.tsx.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>handleSave()</code><br><small style="color:var(--muted)">app/settings/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>setSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>handleSave() node in app/settings/index.tsx.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>HomeScreen()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>AccountRow()</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br><code>BarangayRow()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small><br><code>getAllBarangays()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+1 more</td>
+  <td>HomeScreen() node in app/(tabs)/index.tsx.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>handleQueryChange()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>searchAllAccounts()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>handleQueryChange() node in app/(tabs)/index.tsx.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>TabIcon()</code><br><small style="color:var(--muted)">app/(tabs)/_layout.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>TabLayout()</code><br><small style="color:var(--muted)">app/(tabs)/_layout.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>TabIcon() node in app/(tabs)/_layout.tsx.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>TabLayout()</code><br><small style="color:var(--muted)">app/(tabs)/_layout.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>TabIcon()</code><br><small style="color:var(--muted)">app/(tabs)/_layout.tsx</small></td>
+  <td>TabLayout() node in app/(tabs)/_layout.tsx.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>AccountRow()</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>BarangayScreen()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>HomeScreen()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small><br>+1 more</td>
+  <td><code>StatusDot()</code><br><small style="color:var(--muted)">components/StatusDot.tsx</small></td>
+  <td>AccountRow() node in components/AccountRow.tsx.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>BarangayRow()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>HomeScreen()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small><br><code>index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><code>progressColor()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small><br><code>progressLabel()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td>BarangayRow() node in components/BarangayRow.tsx.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>progressColor()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>BarangayRow()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>progressColor() node in components/BarangayRow.tsx.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>progressLabel()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>BarangayRow()</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>progressLabel() node in components/BarangayRow.tsx.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>getAllBarangays()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>HomeScreen()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small><br><code>index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getAllBarangays() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>searchAllAccounts()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handleQueryChange()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small><br><code>HomeScreen()</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small><br><code>index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>deriveStatus()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>searchAllAccounts() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>setSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handleSave()</code><br><small style="color:var(--muted)">app/settings/index.tsx</small><br><code>index.tsx</code><br><small style="color:var(--muted)">app/settings/index.tsx</small><br><code>SettingsScreen()</code><br><small style="color:var(--muted)">app/settings/index.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>setSetting() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>barangay/[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Account</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>AccountRow()</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br><code>AccountRow.tsx</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br>+16 more</td>
+  <td>Module file in app/barangay/[id].tsx.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/barangay/[id].tsx.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>settings/index.tsx</code><br><small style="color:var(--muted)">app/settings/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>expo-router</code><br><small style="color:var(--muted)">package.json</small><br><code>FontSize</code><br><small style="color:var(--muted)">constants/theme.ts</small><br>+8 more</td>
+  <td>Module file in app/settings/index.tsx.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/settings/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/settings/index.tsx.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>(tabs)/index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Account</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>AccountRow()</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br><code>AccountRow.tsx</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br>+15 more</td>
+  <td>Module file in app/(tabs)/index.tsx.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/(tabs)/index.tsx.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>(tabs)/_layout.tsx</code><br><small style="color:var(--muted)">app/(tabs)/_layout.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>expo-router</code><br><small style="color:var(--muted)">package.json</small><br><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+4 more</td>
+  <td>Module file in app/(tabs)/_layout.tsx.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>AccountRow.tsx</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><code>Account</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>FontSize</code><br><small style="color:var(--muted)">constants/theme.ts</small><br>+8 more</td>
+  <td>Module file in components/AccountRow.tsx.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in components/AccountRow.tsx.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>typeBadgeColor</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>typeBadgeColor node in components/AccountRow.tsx.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>BarangayRow.tsx</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>index.tsx</code><br><small style="color:var(--muted)">app/(tabs)/index.tsx</small></td>
+  <td><code>Barangay</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>FontSize</code><br><small style="color:var(--muted)">constants/theme.ts</small><br>+6 more</td>
+  <td>Module file in components/BarangayRow.tsx.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">components/BarangayRow.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in components/BarangayRow.tsx.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>package.json</code></td><td>42 nodes</td></tr>
+<tr><td><code>app.json</code></td><td>26 nodes</td></tr>
+<tr><td><code>components/BarangayRow.tsx</code></td><td>6 nodes</td></tr>
+<tr><td><code>app/(tabs)/index.tsx</code></td><td>5 nodes</td></tr>
+<tr><td><code>components/AccountRow.tsx</code></td><td>5 nodes</td></tr>
+<tr><td><code>constants/theme.ts</code></td><td>5 nodes</td></tr>
+<tr><td><code>tsconfig.json</code></td><td>5 nodes</td></tr>
+<tr><td><code>app/settings/index.tsx</code></td><td>4 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x82, imports x49, imports x36, calls x11. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 3. Outputs & Docs ====== -->
+<h2 id="outputs-docs">3. Outputs &amp; Docs</h2>
+<p>Outputs &amp; Docs groups implementation around exporttsx, app, tabs, queriests, mostly in app/(tabs)/export.tsx, db/queries.ts, package.json. This section covers 15 nodes and 27 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Outputs &amp; Docs (15 nodes, 27 edges)
+    subgraph outputs_docs_app_tabs_export_tsx_1a99a301["app/(tabs)/export.tsx"]
+        app_tabs_export_6afe08ba("export.tsx")
+        app_tabs_export_exportscreen_cf4863f4("ExportScreen()<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_exportscreen_exportall_bce1eccb("exportAll()<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_exportscreen_exportbarangay_99bd7407("exportBarangay()<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_monthlabel_70cb326d("monthLabel()<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_generatemonthoptions_670ec6d8("generateMonthOptions()<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_exportscreen_buildtemplatesheet_06f6621b("buildTemplateSheet()<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_barangaymeta_56bba768("BarangayMeta<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_template_headers_f03745f7("TEMPLATE_HEADERS<br/><small>app/(tabs)/export.tsx</small>")
+        app_tabs_export_styles_ed19e52c("styles<br/><small>app/(tabs)/export.tsx</small>")
+    end
+    subgraph outputs_docs_db_queries_ts_2d413409["db/queries.ts"]
+        db_queries_getsetting_eea4c64c("getSetting()<br/><small>db/queries.ts</small>")
+        db_queries_getallbarangaysforexport_3a8193c6("getAllBarangaysForExport()<br/><small>db/queries.ts</small>")
+        db_queries_getfullexportdata_4b13e361("getFullExportData()<br/><small>db/queries.ts</small>")
+    end
+    subgraph outputs_docs_package_json_795ff583["package.json"]
+        ref_expo_sharing_65e42517("expo-sharing<br/><small>package.json</small>")
+        ref_xlsx_5c2b95cb("xlsx<br/><small>package.json</small>")
+    end
+    app_tabs_export_exportscreen_cf4863f4 -->|calls| db_queries_getsetting_eea4c64c
+    app_tabs_export_exportscreen_cf4863f4 -->|calls| app_tabs_export_monthlabel_70cb326d
+    app_tabs_export_exportscreen_cf4863f4 -->|calls| app_tabs_export_generatemonthoptions_670ec6d8
+    app_tabs_export_exportscreen_cf4863f4 -->|calls| db_queries_getallbarangaysforexport_3a8193c6
+    app_tabs_export_exportscreen_cf4863f4 -->|calls| db_queries_getfullexportdata_4b13e361
+    app_tabs_export_exportscreen_buildtemplatesheet_06f6621b -->|calls| db_queries_getfullexportdata_4b13e361
+    app_tabs_export_exportscreen_exportall_bce1eccb -->|calls| app_tabs_export_monthlabel_70cb326d
+    app_tabs_export_exportscreen_exportall_bce1eccb -->|calls| db_queries_getsetting_eea4c64c
+    app_tabs_export_exportscreen_exportall_bce1eccb -->|calls| app_tabs_export_exportscreen_buildtemplatesheet_06f6621b
+    app_tabs_export_exportscreen_exportbarangay_99bd7407 -->|calls| app_tabs_export_monthlabel_70cb326d
+    app_tabs_export_exportscreen_exportbarangay_99bd7407 -->|calls| db_queries_getsetting_eea4c64c
+    app_tabs_export_exportscreen_exportbarangay_99bd7407 -->|calls| app_tabs_export_exportscreen_buildtemplatesheet_06f6621b
+    db_queries_getfullexportdata_4b13e361 -->|calls| db_queries_getsetting_eea4c64c
+    app_tabs_export_6afe08ba -->|imports| db_queries_getallbarangaysforexport_3a8193c6
+    app_tabs_export_6afe08ba -->|imports| db_queries_getfullexportdata_4b13e361
+    app_tabs_export_6afe08ba -->|imports| db_queries_getsetting_eea4c64c
+    app_tabs_export_6afe08ba -->|imports| ref_expo_sharing_65e42517
+    app_tabs_export_6afe08ba -->|imports| ref_xlsx_5c2b95cb
+    class app_tabs_export_6afe08ba ui;
+    class app_tabs_export_exportscreen_cf4863f4 ui;
+    class app_tabs_export_exportscreen_exportall_bce1eccb ui;
+    class app_tabs_export_exportscreen_exportbarangay_99bd7407 ui;
+    class app_tabs_export_monthlabel_70cb326d ui;
+    class app_tabs_export_generatemonthoptions_670ec6d8 ui;
+    class app_tabs_export_exportscreen_buildtemplatesheet_06f6621b ui;
+    class app_tabs_export_barangaymeta_56bba768 ui;
+    class app_tabs_export_template_headers_f03745f7 ui;
+    class app_tabs_export_styles_ed19e52c ui;
+    class db_queries_getsetting_eea4c64c function;
+    class db_queries_getallbarangaysforexport_3a8193c6 function;
+    class db_queries_getfullexportdata_4b13e361 function;
+    class ref_expo_sharing_65e42517 function;
+    class ref_xlsx_5c2b95cb function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>BarangayMeta</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>BarangayMeta node in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>ExportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>generateMonthOptions()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>getAllBarangaysForExport()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+4 more</td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>buildTemplateSheet()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>exportAll()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>exportBarangay()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><code>getFullExportData()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>buildTemplateSheet() node in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>exportAll()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>buildTemplateSheet()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>monthLabel()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>exportBarangay()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>buildTemplateSheet()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>monthLabel()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>generateMonthOptions()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>ExportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>generateMonthOptions() node in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>monthLabel()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>exportAll()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>exportBarangay()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>ExportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>monthLabel() node in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>getAllBarangaysForExport()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>export.tsx</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>ExportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>getFullExportData()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>buildTemplateSheet()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>export.tsx</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>ExportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small><br><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>_layout.tsx</code><br><small style="color:var(--muted)">app/(tabs)/_layout.tsx</small><br>+11 more</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getSetting() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>export.tsx</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>expo-file-system</code><br><small style="color:var(--muted)">package.json</small><br>+14 more</td>
+  <td>Module file in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>TEMPLATE_HEADERS</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>TEMPLATE_HEADERS node in app/(tabs)/export.tsx.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>expo-sharing</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>export.tsx</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>package.json</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td>No direct outbound edge</td>
+  <td>expo-sharing node in package.json.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>xlsx</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>export.tsx</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>package.json</code><br><small style="color:var(--muted)">package.json</small></td>
+  <td>No direct outbound edge</td>
+  <td>xlsx node in package.json.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>app/(tabs)/export.tsx</code></td><td>10 nodes</td></tr>
+<tr><td><code>db/queries.ts</code></td><td>3 nodes</td></tr>
+<tr><td><code>package.json</code></td><td>2 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x13, contains x9, imports x3, imports x2. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 4. Queriests Idtsx App ====== -->
+<h2 id="queriests-idtsx-app">4. Queriests Idtsx App</h2>
+<p>Queriests Idtsx App groups implementation around queriests, idtsx, app, reading, mostly in db/queries.ts, app/reading/[id].tsx, app/barangay/[id].tsx. This section covers 31 nodes and 61 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Queriests Idtsx App (31 nodes, 61 edges)
+    subgraph queriests_idtsx_app_db_queries_ts_d3f81b2e["db/queries.ts"]
+        db_queries_getaccountsbybarangay_8a430220("getAccountsByBarangay()<br/><small>db/queries.ts</small>")
+        db_queries_getaccount_0f2a6cce("getAccount()<br/><small>db/queries.ts</small>")
+        db_queries_currentmonth_cd82af6e("currentMonth()<br/><small>db/queries.ts</small>")
+        db_queries_marknoreading_050836b3("markNoReading()<br/><small>db/queries.ts</small>")
+        db_queries_savereading_935d09f6("saveReading()<br/><small>db/queries.ts</small>")
+        db_queries_getreadingsforaccount_4b91e91a("getReadingsForAccount()<br/><small>db/queries.ts</small>")
+        db_queries_derivestatus_9bc28335("deriveStatus()<br/><small>db/queries.ts</small>")
+        db_queries_getoverallprogress_c8e77022("getOverallProgress()<br/><small>db/queries.ts</small>")
+    end
+    subgraph queriests_idtsx_app_app_reading_id_tsx_f96c33f5["app/reading/[id].tsx"]
+        app_reading_id_readingentryscreen_18e07009("ReadingEntryScreen()<br/><small>app/reading/[id].tsx</small>")
+        app_reading_id_b12382aa("[id].tsx")
+        app_reading_id_monthlabel_4468e8a4("monthLabel()<br/><small>app/reading/[id].tsx</small>")
+        app_reading_id_formatdatelabel_adfa0192("formatDateLabel()<br/><small>app/reading/[id].tsx</small>")
+        app_reading_id_generatemonthoptions_0b00edaf("generateMonthOptions()<br/><small>app/reading/[id].tsx</small>")
+        app_reading_id_readingentryscreen_dosave_2674dda5("doSave()<br/><small>app/reading/[id].tsx</small>")
+        app_reading_id_readingentryscreen_handlesave_16029fa5("handleSave()<br/><small>app/reading/[id].tsx</small>")
+    end
+    subgraph queriests_idtsx_app_app_barangay_id_tsx_d4bf1356["app/barangay/[id].tsx"]
+        app_barangay_id_barangayscreen_5c3d2cb7("BarangayScreen()<br/><small>app/barangay/[id].tsx</small>")
+        app_barangay_id_barangayscreen_handlemarknoreadi_56ab921e("handleMarkNoReading()<br/><small>app/barangay/[id].tsx</small>")
+    end
+    db_schema_getdb_574fb94a("getDb()<br/><small>db/schema.ts</small>")
+    app_barangay_id_barangayscreen_5c3d2cb7 -->|calls| db_queries_getaccountsbybarangay_8a430220
+    app_barangay_id_barangayscreen_5c3d2cb7 -->|calls| db_queries_currentmonth_cd82af6e
+    app_barangay_id_barangayscreen_5c3d2cb7 -->|calls| db_queries_marknoreading_050836b3
+    app_barangay_id_barangayscreen_handlemarknoreadi_56ab921e -->|calls| db_queries_currentmonth_cd82af6e
+    app_barangay_id_barangayscreen_handlemarknoreadi_56ab921e -->|calls| db_queries_marknoreading_050836b3
+    app_reading_id_readingentryscreen_18e07009 -->|calls| db_queries_savereading_935d09f6
+    app_reading_id_readingentryscreen_18e07009 -->|calls| app_reading_id_monthlabel_4468e8a4
+    app_reading_id_readingentryscreen_18e07009 -->|calls| app_reading_id_formatdatelabel_adfa0192
+    app_reading_id_readingentryscreen_18e07009 -->|calls| app_reading_id_generatemonthoptions_0b00edaf
+    app_reading_id_readingentryscreen_18e07009 -->|calls| db_queries_currentmonth_cd82af6e
+    app_reading_id_readingentryscreen_18e07009 -->|calls| db_queries_getaccount_0f2a6cce
+    app_reading_id_readingentryscreen_18e07009 -->|calls| db_queries_getreadingsforaccount_4b91e91a
+    app_reading_id_readingentryscreen_dosave_2674dda5 -->|calls| db_queries_savereading_935d09f6
+    app_reading_id_readingentryscreen_handlesave_16029fa5 -->|calls| app_reading_id_readingentryscreen_dosave_2674dda5
+    db_queries_getaccount_0f2a6cce -->|calls| db_schema_getdb_574fb94a
+    db_queries_getaccount_0f2a6cce -->|calls| db_queries_currentmonth_cd82af6e
+    db_queries_getaccount_0f2a6cce -->|calls| db_queries_derivestatus_9bc28335
+    db_queries_getaccountsbybarangay_8a430220 -->|calls| db_queries_derivestatus_9bc28335
+    db_queries_getaccountsbybarangay_8a430220 -->|calls| db_schema_getdb_574fb94a
+    db_queries_getaccountsbybarangay_8a430220 -->|calls| db_queries_currentmonth_cd82af6e
+    db_queries_getoverallprogress_c8e77022 -->|calls| db_schema_getdb_574fb94a
+    db_queries_getreadingsforaccount_4b91e91a -->|calls| db_schema_getdb_574fb94a
+    db_queries_marknoreading_050836b3 -->|calls| db_schema_getdb_574fb94a
+    db_queries_marknoreading_050836b3 -->|calls| db_queries_savereading_935d09f6
+    %% Omitted for readability: 13 nodes, 5 edges
+    class db_queries_getaccountsbybarangay_8a430220 function;
+    class db_queries_getaccount_0f2a6cce function;
+    class db_queries_currentmonth_cd82af6e function;
+    class db_queries_marknoreading_050836b3 function;
+    class db_queries_savereading_935d09f6 function;
+    class db_queries_getreadingsforaccount_4b91e91a function;
+    class db_queries_derivestatus_9bc28335 function;
+    class db_queries_getoverallprogress_c8e77022 function;
+    class app_reading_id_readingentryscreen_18e07009 ui;
+    class app_reading_id_b12382aa ui;
+    class app_reading_id_monthlabel_4468e8a4 ui;
+    class app_reading_id_formatdatelabel_adfa0192 ui;
+    class app_reading_id_generatemonthoptions_0b00edaf ui;
+    class app_reading_id_readingentryscreen_dosave_2674dda5 ui;
+    class app_reading_id_readingentryscreen_handlesave_16029fa5 ui;
+    class app_barangay_id_barangayscreen_5c3d2cb7 ui;
+    class app_barangay_id_barangayscreen_handlemarknoreadi_56ab921e ui;
+    class db_schema_getdb_574fb94a function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>FullExportRow</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Exports documentation data to a target format.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>SortDir</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>SortDir node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>SortField</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>SortField node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>BarangayScreen()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>AccountRow()</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getAccountsByBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+2 more</td>
+  <td>BarangayScreen() node in app/barangay/[id].tsx.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>handleMarkNoReading()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getSetting()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>markNoReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>handleMarkNoReading() node in app/barangay/[id].tsx.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>toggleSort()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>toggleSort() node in app/barangay/[id].tsx.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>formatDateLabel()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>ReadingEntryScreen()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>formatDateLabel() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>generateMonthOptions()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>ReadingEntryScreen()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>generateMonthOptions() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>monthLabel()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>ReadingEntryScreen()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>monthLabel() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>ReadingEntryScreen()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>formatDateLabel()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>generateMonthOptions()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br>+5 more</td>
+  <td>ReadingEntryScreen() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>applyDatePicker()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>applyDatePicker() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>doSave()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>handleSave()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><code>saveReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>doSave() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>handleSave()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>doSave()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td>handleSave() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>numpadPress()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>numpadPress() node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>BarangayScreen()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br>+8 more</td>
+  <td>No direct outbound edge</td>
+  <td>currentMonth() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>deriveStatus()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>getAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getAccountsByBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>searchAllAccounts()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>deriveStatus() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>getAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br>+1 more</td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>deriveStatus()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getAccount() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>getAccountsByBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>BarangayScreen()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>deriveStatus()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getAccountsByBarangay() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>getOverallProgress()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>export.tsx</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small><br><code>ExportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/export.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getOverallProgress() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>getReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getReading() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>getReadingsForAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br>+1 more</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getReadingsForAccount() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>markNoReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>BarangayScreen()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>handleMarkNoReading()</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small><br><code>saveReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>markNoReading() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>saveReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>doSave()</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>markNoReading()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+1 more</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>saveReading() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>updateAccountFields()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>updateAccountFields() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>updateAccountStatus()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>updateAccountStatus() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>createAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>createBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>deleteAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+25 more</td>
+  <td>No direct outbound edge</td>
+  <td>getDb() node in db/schema.ts.</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>reading/[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Account</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>currentMonth()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+14 more</td>
+  <td>Module file in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>REMARK_COLORS</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>REMARK_COLORS node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>REMARKS</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>REMARKS node in app/reading/[id].tsx.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/reading/[id].tsx.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>db/queries.ts</code></td><td>15 nodes</td></tr>
+<tr><td><code>app/reading/[id].tsx</code></td><td>12 nodes</td></tr>
+<tr><td><code>app/barangay/[id].tsx</code></td><td>3 nodes</td></tr>
+<tr><td><code>db/schema.ts</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x28, contains x27, imports x5, imports x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 5. Types Indexts Account ====== -->
+<h2 id="types-indexts-account">5. Types Indexts Account</h2>
+<p>Types Indexts Account groups implementation around types, indexts, account, addtsx, mostly in types/index.ts, app/account/add.tsx, db/queries.ts. This section covers 19 nodes and 25 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Types Indexts Account (19 nodes, 25 edges)
+    subgraph types_indexts_account_app_account_add_tsx_18a79d9e["app/account/add.tsx"]
+        app_account_add_b1dbf26b("add.tsx")
+        app_account_add_addaccountscreen_b4784b61("AddAccountScreen()<br/><small>app/account/add.tsx</small>")
+        app_account_add_addaccountscreen_handlesave_fb61156a("handleSave()<br/><small>app/account/add.tsx</small>")
+        app_account_add_account_types_5d70cd90("ACCOUNT_TYPES<br/><small>app/account/add.tsx</small>")
+        app_account_add_line_statuses_9bf4a2eb("LINE_STATUSES<br/><small>app/account/add.tsx</small>")
+        app_account_add_meter_statuses_cc994bb2("METER_STATUSES<br/><small>app/account/add.tsx</small>")
+        app_account_add_styles_bfa259b0("styles<br/><small>app/account/add.tsx</small>")
+    end
+    subgraph types_indexts_account_types_index_ts_6c3fb627["types/index.ts"]
+        types_index_accounttype_4e7ad629("AccountType<br/><small>types/index.ts</small>")
+        types_index_linestatus_94191ec9("LineStatus<br/><small>types/index.ts</small>")
+        types_index_meterstatus_17debf03("MeterStatus<br/><small>types/index.ts</small>")
+        types_index_86365007("index.ts")
+        types_index_importlog_701be1cd("ImportLog<br/><small>types/index.ts</small>")
+        types_index_reading_e973f413("Reading<br/><small>types/index.ts</small>")
+        types_index_readingremark_c0c1d98e("ReadingRemark<br/><small>types/index.ts</small>")
+    end
+    subgraph types_indexts_account_db_queries_ts_70e11db2["db/queries.ts"]
+        db_queries_createbarangay_308b2548("createBarangay()<br/><small>db/queries.ts</small>")
+        db_queries_createaccount_ea3bf13d("createAccount()<br/><small>db/queries.ts</small>")
+        db_queries_getallbarangaynames_ab909a8d("getAllBarangayNames()<br/><small>db/queries.ts</small>")
+    end
+    components_statusdot_props_e05601b1("Props<br/><small>components/StatusDot.tsx</small>")
+    app_account_add_addaccountscreen_b4784b61 -->|calls| db_queries_createbarangay_308b2548
+    app_account_add_addaccountscreen_b4784b61 -->|calls| db_queries_createaccount_ea3bf13d
+    app_account_add_addaccountscreen_handlesave_fb61156a -->|calls| db_queries_createbarangay_308b2548
+    app_account_add_addaccountscreen_handlesave_fb61156a -->|calls| db_queries_createaccount_ea3bf13d
+    app_account_add_b1dbf26b -->|imports| db_queries_createaccount_ea3bf13d
+    app_account_add_b1dbf26b -->|imports| db_queries_createbarangay_308b2548
+    app_account_add_b1dbf26b -->|imports| db_queries_getallbarangaynames_ab909a8d
+    app_account_add_b1dbf26b -->|imports| types_index_accounttype_4e7ad629
+    app_account_add_b1dbf26b -->|imports| types_index_linestatus_94191ec9
+    app_account_add_b1dbf26b -->|imports| types_index_meterstatus_17debf03
+    app_account_add_b1dbf26b -->|imports| types_index_86365007
+    %% Omitted for readability: 1 nodes, 0 edges
+    class app_account_add_b1dbf26b ui;
+    class app_account_add_addaccountscreen_b4784b61 ui;
+    class app_account_add_addaccountscreen_handlesave_fb61156a ui;
+    class app_account_add_account_types_5d70cd90 ui;
+    class app_account_add_line_statuses_9bf4a2eb ui;
+    class app_account_add_meter_statuses_cc994bb2 ui;
+    class app_account_add_styles_bfa259b0 ui;
+    class types_index_accounttype_4e7ad629 klass;
+    class types_index_linestatus_94191ec9 klass;
+    class types_index_meterstatus_17debf03 klass;
+    class types_index_86365007 module;
+    class types_index_importlog_701be1cd klass;
+    class types_index_reading_e973f413 klass;
+    class types_index_readingremark_c0c1d98e klass;
+    class db_queries_createbarangay_308b2548 function;
+    class db_queries_createaccount_ea3bf13d function;
+    class db_queries_getallbarangaynames_ab909a8d function;
+    class components_statusdot_props_e05601b1 ui;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>Props</code><br><small style="color:var(--muted)">components/StatusDot.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Props node in components/StatusDot.tsx.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>AccountType</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>AccountType node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>ImportLog</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>queries.ts</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>ImportLog node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>LineStatus</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>LineStatus node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>MeterStatus</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>MeterStatus node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>Reading</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>queries.ts</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>No direct outbound edge</td>
+  <td>Reading node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>ReadingRemark</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>ReadingRemark node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>StatusColor</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td><code>queries.ts</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>StatusDot.tsx</code><br><small style="color:var(--muted)">components/StatusDot.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>StatusColor node in types/index.ts.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>AddAccountScreen()</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>createAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>createBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>AddAccountScreen() node in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>handleSave()</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>createAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>createBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>handleSave() node in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>createAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small><br><code>AddAccountScreen()</code><br><small style="color:var(--muted)">app/account/add.tsx</small><br><code>handleSave()</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>createAccount() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>createBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small><br><code>AddAccountScreen()</code><br><small style="color:var(--muted)">app/account/add.tsx</small><br><code>handleSave()</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>createBarangay() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>getAllBarangayNames()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getAllBarangayNames() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>add.tsx</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>AccountType</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>createAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+13 more</td>
+  <td>Module file in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>ACCOUNT_TYPES</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>ACCOUNT_TYPES node in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>LINE_STATUSES</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>LINE_STATUSES node in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>METER_STATUSES</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>METER_STATUSES node in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/account/add.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/account/add.tsx.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>types/index.ts</code><br><small style="color:var(--muted)">types/index.ts</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/barangay/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/reading/[id].tsx</small><br><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br>+7 more</td>
+  <td>No direct outbound edge</td>
+  <td>Module file in types/index.ts.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>types/index.ts</code></td><td>8 nodes</td></tr>
+<tr><td><code>app/account/add.tsx</code></td><td>7 nodes</td></tr>
+<tr><td><code>db/queries.ts</code></td><td>3 nodes</td></tr>
+<tr><td><code>components/StatusDot.tsx</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x13, imports x6, calls x4, references x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 6. Account Idtsx App ====== -->
+<h2 id="account-idtsx-app">6. Account Idtsx App</h2>
+<p>Account Idtsx App groups implementation around account, idtsx, app, queriests, mostly in app/account/[id].tsx, db/queries.ts, components/StatusDot.tsx. This section covers 19 nodes and 30 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Account Idtsx App (19 nodes, 30 edges)
+    subgraph account_idtsx_app_app_account_id_tsx_cb6a6270["app/account/[id].tsx"]
+        app_account_id_accountdetailscreen_852e3224("AccountDetailScreen()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_67616a35("[id].tsx")
+        app_account_id_accountdetailscreen_handledeleter_a057dd30("handleDeleteReading()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_accountdetailscreen_handledeletea_a87d94ce("handleDeleteAccount()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_accountdetailscreen_saveedit_c037e19d("saveEdit()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_inforow_e97472e6("InfoRow()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_readingstatuscolor_19a19546("readingStatusColor()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_monthlabel_18806473("monthLabel()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_detailitem_bb9658ae("DetailItem()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_line_statuses_f5c34cc6("LINE_STATUSES<br/><small>app/account/[id].tsx</small>")
+        app_account_id_meter_statuses_347262be("METER_STATUSES<br/><small>app/account/[id].tsx</small>")
+        app_account_id_accountdetailscreen_handleaddread_bea80986("handleAddReading()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_accountdetailscreen_handleeditrea_d48f1916("handleEditReading()<br/><small>app/account/[id].tsx</small>")
+        app_account_id_accountdetailscreen_openedit_c9085684("openEdit()<br/><small>app/account/[id].tsx</small>")
+    end
+    subgraph account_idtsx_app_db_queries_ts_1a30dfb9["db/queries.ts"]
+        db_queries_deleteaccount_f6df6f93("deleteAccount()<br/><small>db/queries.ts</small>")
+        db_queries_deletereading_b302fadc("deleteReading()<br/><small>db/queries.ts</small>")
+        db_queries_updateaccountdetails_0e25c76c("updateAccountDetails()<br/><small>db/queries.ts</small>")
+    end
+    components_statusdot_statusdot_89621d17("StatusDot()<br/><small>components/StatusDot.tsx</small>")
+    app_account_id_accountdetailscreen_852e3224 -->|calls| db_queries_deleteaccount_f6df6f93
+    app_account_id_accountdetailscreen_852e3224 -->|calls| db_queries_deletereading_b302fadc
+    app_account_id_accountdetailscreen_852e3224 -->|calls| app_account_id_inforow_e97472e6
+    app_account_id_accountdetailscreen_852e3224 -->|calls| app_account_id_readingstatuscolor_19a19546
+    app_account_id_accountdetailscreen_852e3224 -->|calls| components_statusdot_statusdot_89621d17
+    app_account_id_accountdetailscreen_852e3224 -->|calls| app_account_id_monthlabel_18806473
+    app_account_id_accountdetailscreen_852e3224 -->|calls| app_account_id_detailitem_bb9658ae
+    app_account_id_accountdetailscreen_852e3224 -->|calls| db_queries_updateaccountdetails_0e25c76c
+    app_account_id_accountdetailscreen_handledeletea_a87d94ce -->|calls| db_queries_deleteaccount_f6df6f93
+    app_account_id_accountdetailscreen_handledeleter_a057dd30 -->|calls| app_account_id_monthlabel_18806473
+    app_account_id_accountdetailscreen_handledeleter_a057dd30 -->|calls| db_queries_deletereading_b302fadc
+    app_account_id_accountdetailscreen_saveedit_c037e19d -->|calls| db_queries_updateaccountdetails_0e25c76c
+    app_account_id_67616a35 -->|imports| db_queries_deleteaccount_f6df6f93
+    app_account_id_67616a35 -->|imports| db_queries_deletereading_b302fadc
+    app_account_id_67616a35 -->|imports| db_queries_updateaccountdetails_0e25c76c
+    app_account_id_67616a35 -->|imports| components_statusdot_statusdot_89621d17
+    %% Omitted for readability: 1 nodes, 0 edges
+    class app_account_id_accountdetailscreen_852e3224 ui;
+    class app_account_id_67616a35 ui;
+    class app_account_id_accountdetailscreen_handledeleter_a057dd30 ui;
+    class app_account_id_accountdetailscreen_handledeletea_a87d94ce ui;
+    class app_account_id_accountdetailscreen_saveedit_c037e19d ui;
+    class app_account_id_inforow_e97472e6 ui;
+    class app_account_id_readingstatuscolor_19a19546 ui;
+    class app_account_id_monthlabel_18806473 ui;
+    class app_account_id_detailitem_bb9658ae ui;
+    class app_account_id_line_statuses_f5c34cc6 ui;
+    class app_account_id_meter_statuses_347262be ui;
+    class app_account_id_accountdetailscreen_handleaddread_bea80986 ui;
+    class app_account_id_accountdetailscreen_handleeditrea_d48f1916 ui;
+    class app_account_id_accountdetailscreen_openedit_c9085684 ui;
+    class db_queries_deleteaccount_f6df6f93 function;
+    class db_queries_deletereading_b302fadc function;
+    class db_queries_updateaccountdetails_0e25c76c function;
+    class components_statusdot_statusdot_89621d17 ui;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>deleteAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>deleteReading()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>DetailItem()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br>+7 more</td>
+  <td>AccountDetailScreen() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>handleAddReading()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>handleAddReading() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>handleDeleteAccount()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>deleteAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>handleDeleteAccount() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>handleDeleteReading()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>deleteReading()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>monthLabel()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td>handleDeleteReading() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>handleEditReading()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>handleEditReading() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>openEdit()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>openEdit() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>saveEdit()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>updateAccountDetails()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td>saveEdit() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>DetailItem()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>DetailItem() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>InfoRow()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>InfoRow() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>monthLabel()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>handleDeleteReading()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>monthLabel() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>readingStatusColor()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>readingStatusColor() node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>StatusDot()</code><br><small style="color:var(--muted)">components/StatusDot.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountRow()</code><br><small style="color:var(--muted)">components/AccountRow.tsx</small><br>+1 more</td>
+  <td>No direct outbound edge</td>
+  <td>StatusDot() node in components/StatusDot.tsx.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>deleteAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>handleDeleteAccount()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>deleteAccount() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>deleteReading()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>handleDeleteReading()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>deleteReading() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>updateAccountDetails()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>AccountDetailScreen()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small><br><code>saveEdit()</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>updateAccountDetails() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>account/[id].tsx</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Account</code><br><small style="color:var(--muted)">types/index.ts</small><br><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>deleteAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+18 more</td>
+  <td>Module file in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>LINE_STATUSES</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>LINE_STATUSES node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>METER_STATUSES</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>METER_STATUSES node in app/account/[id].tsx.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/account/[id].tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/account/[id].tsx.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>app/account/[id].tsx</code></td><td>15 nodes</td></tr>
+<tr><td><code>db/queries.ts</code></td><td>3 nodes</td></tr>
+<tr><td><code>components/StatusDot.tsx</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x14, calls x12, imports x4. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 7. Importtsx App Tabs ====== -->
+<h2 id="importtsx-app-tabs">7. Importtsx App Tabs</h2>
+<p>Importtsx App Tabs groups implementation around importtsx, app, tabs, queriests, mostly in app/(tabs)/import.tsx, db/queries.ts. This section covers 19 nodes and 35 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Importtsx App Tabs (19 nodes, 35 edges)
+    subgraph importtsx_app_tabs_app_tabs_import_tsx_e83256bd["app/(tabs)/import.tsx"]
+        app_tabs_import_importscreen_processsheet_c1e77a94("processSheet()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_d629215f("import.tsx")
+        app_tabs_import_importscreen_d3d34082("ImportScreen()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_importscreen_handlepick_bf434de6("handlePick()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_simplehash_5935a284("simpleHash()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_findheaderrowindex_42d45fe2("findHeaderRowIndex()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_mapcolumns_d3c1c407("mapColumns()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_parselinestatus_346f031d("parseLineStatus()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_parsemeterstatus_4421be82("parseMeterStatus()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_parsebalance_5711a6ee("parseBalance()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_parselastpayment_968fd1dd("parseLastPayment()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_importscreen_formatdate_7c54a4c4("formatDate()<br/><small>app/(tabs)/import.tsx</small>")
+        app_tabs_import_parseremark_44f511d5("parseRemark()<br/><small>app/(tabs)/import.tsx</small>")
+    end
+    subgraph importtsx_app_tabs_db_queries_ts_4530206f["db/queries.ts"]
+        db_queries_getimportlog_4d1b08fd("getImportLog()<br/><small>db/queries.ts</small>")
+        db_queries_isfilealreadyimported_3b2bba7f("isFileAlreadyImported()<br/><small>db/queries.ts</small>")
+        db_queries_logimport_90da6de4("logImport()<br/><small>db/queries.ts</small>")
+        db_queries_upsertbarangay_1d59d061("upsertBarangay()<br/><small>db/queries.ts</small>")
+        db_queries_upsertaccount_b2c55abd("upsertAccount()<br/><small>db/queries.ts</small>")
+    end
+    app_tabs_import_importscreen_d3d34082 -->|calls| db_queries_getimportlog_4d1b08fd
+    app_tabs_import_importscreen_d3d34082 -->|calls| db_queries_isfilealreadyimported_3b2bba7f
+    app_tabs_import_importscreen_d3d34082 -->|calls| db_queries_logimport_90da6de4
+    app_tabs_import_importscreen_d3d34082 -->|calls| db_queries_upsertbarangay_1d59d061
+    app_tabs_import_importscreen_d3d34082 -->|calls| db_queries_upsertaccount_b2c55abd
+    app_tabs_import_importscreen_handlepick_bf434de6 -->|calls| app_tabs_import_simplehash_5935a284
+    app_tabs_import_importscreen_handlepick_bf434de6 -->|calls| db_queries_isfilealreadyimported_3b2bba7f
+    app_tabs_import_importscreen_handlepick_bf434de6 -->|calls| app_tabs_import_importscreen_processsheet_c1e77a94
+    app_tabs_import_importscreen_handlepick_bf434de6 -->|calls| db_queries_logimport_90da6de4
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| app_tabs_import_findheaderrowindex_42d45fe2
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| app_tabs_import_mapcolumns_d3c1c407
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| db_queries_upsertbarangay_1d59d061
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| app_tabs_import_parselinestatus_346f031d
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| app_tabs_import_parsemeterstatus_4421be82
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| app_tabs_import_parsebalance_5711a6ee
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| app_tabs_import_parselastpayment_968fd1dd
+    app_tabs_import_importscreen_processsheet_c1e77a94 -->|calls| db_queries_upsertaccount_b2c55abd
+    app_tabs_import_d629215f -->|imports| db_queries_getimportlog_4d1b08fd
+    app_tabs_import_d629215f -->|imports| db_queries_isfilealreadyimported_3b2bba7f
+    app_tabs_import_d629215f -->|imports| db_queries_logimport_90da6de4
+    app_tabs_import_d629215f -->|imports| db_queries_upsertaccount_b2c55abd
+    app_tabs_import_d629215f -->|imports| db_queries_upsertbarangay_1d59d061
+    %% Omitted for readability: 1 nodes, 0 edges
+    class app_tabs_import_importscreen_processsheet_c1e77a94 ui;
+    class app_tabs_import_d629215f ui;
+    class app_tabs_import_importscreen_d3d34082 ui;
+    class app_tabs_import_importscreen_handlepick_bf434de6 ui;
+    class app_tabs_import_simplehash_5935a284 ui;
+    class app_tabs_import_findheaderrowindex_42d45fe2 ui;
+    class app_tabs_import_mapcolumns_d3c1c407 ui;
+    class app_tabs_import_parselinestatus_346f031d ui;
+    class app_tabs_import_parsemeterstatus_4421be82 ui;
+    class app_tabs_import_parsebalance_5711a6ee ui;
+    class app_tabs_import_parselastpayment_968fd1dd ui;
+    class app_tabs_import_importscreen_formatdate_7c54a4c4 ui;
+    class app_tabs_import_parseremark_44f511d5 ui;
+    class db_queries_getimportlog_4d1b08fd function;
+    class db_queries_isfilealreadyimported_3b2bba7f function;
+    class db_queries_logimport_90da6de4 function;
+    class db_queries_upsertbarangay_1d59d061 function;
+    class db_queries_upsertaccount_b2c55abd function;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>findHeaderRowIndex()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>findHeaderRowIndex() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>ImportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>getImportLog()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>isFileAlreadyImported()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>logImport()</code><br><small style="color:var(--muted)">db/queries.ts</small><br>+2 more</td>
+  <td>ImportScreen() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>formatDate()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>formatDate() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>handlePick()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>isFileAlreadyImported()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>logImport()</code><br><small style="color:var(--muted)">db/queries.ts</small><br><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br>+1 more</td>
+  <td>handlePick() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>handlePick()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><code>findHeaderRowIndex()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>mapColumns()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>parseBalance()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br>+5 more</td>
+  <td>processSheet() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>mapColumns()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>mapColumns() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>parseBalance()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>parseBalance() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>parseLastPayment()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>parseLastPayment() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>parseLineStatus()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>parseLineStatus() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>parseMeterStatus()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>parseMeterStatus() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>parseRemark()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>parseRemark() node in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>simpleHash()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td><code>handlePick()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td>No direct outbound edge</td>
+  <td>Caches analysis results or computes cache keys.</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>getImportLog()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>ImportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>getImportLog() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>isFileAlreadyImported()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handlePick()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>ImportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>isFileAlreadyImported() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>logImport()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>handlePick()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>ImportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>logImport() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>upsertAccount()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>ImportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>upsertAccount() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>upsertBarangay()</code><br><small style="color:var(--muted)">db/queries.ts</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>ImportScreen()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small><br><code>processSheet()</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><code>getDb()</code><br><small style="color:var(--muted)">db/schema.ts</small></td>
+  <td>upsertBarangay() node in db/queries.ts.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>import.tsx</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>Colors</code><br><small style="color:var(--muted)">constants/theme.ts</small><br><code>expo-document-picker</code><br><small style="color:var(--muted)">package.json</small><br><code>expo-file-system</code><br><small style="color:var(--muted)">package.json</small><br>+16 more</td>
+  <td>Module file in app/(tabs)/import.tsx.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>styles</code><br><small style="color:var(--muted)">app/(tabs)/import.tsx</small></td>
+  <td><span class="tag tag-hook">UI</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>styles node in app/(tabs)/import.tsx.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>app/(tabs)/import.tsx</code></td><td>14 nodes</td></tr>
+<tr><td><code>db/queries.ts</code></td><td>5 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: calls x17, contains x13, imports x5. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<h2 id="stats">Project Statistics</h2>
+
+<div class="grid">
+  <div class="card">
+    <h4>Graph</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>Nodes</td><td>219</td></tr>
+      <tr><td>Edges</td><td>506</td></tr>
+      <tr><td>Hyperedges</td><td>0</td></tr>
+      <tr><td>Communities</td><td>10</td></tr>
+      <tr><td>Documented Sections</td><td>6</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Edge Confidence</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><td>EXTRACTED</td><td>506</td></tr>
+      <tr><td>INFERRED</td><td>0</td></tr>
+      <tr><td>AMBIGUOUS</td><td>0</td></tr>
+    </table>
+  </div>
+</div>
+
+<div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
+  <p>mogpog-waterworks — Architecture Documentation</p>
+  <p>Generated: 2026-10-01 14:27 UTC · graphify callflow-html</p>
+</div>
+
+</div><!-- .container -->
+
+<script>
+(function () {
+  const mermaidConfig = {
+    startOnLoad: false,
+    theme: 'dark',
+    securityLevel: 'loose',
+    flowchart: { htmlLabels: true, useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#1e293b',
+      primaryTextColor: '#e2e8f0',
+      primaryBorderColor: '#38bdf8',
+      secondaryColor: '#0f172a',
+      tertiaryColor: '#334155',
+      lineColor: '#64748b',
+      textColor: '#e2e8f0',
+    }
+  };
+
+  mermaid.initialize(mermaidConfig);
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function enhanceMermaidDiagrams() {
+    document.querySelectorAll('.mermaid').forEach((container) => {
+      if (container.dataset.zoomReady === 'true') return;
+      const svg = container.querySelector('svg');
+      if (!svg) return;
+
+      container.dataset.zoomReady = 'true';
+      container.classList.add('is-enhanced');
+
+      const viewport = document.createElement('div');
+      viewport.className = 'mermaid-viewport';
+      svg.parentNode.insertBefore(viewport, svg);
+      viewport.appendChild(svg);
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'mermaid-toolbar';
+      toolbar.innerHTML = [
+        '<button type="button" data-action="zoom-out" title="Zoom out">-</button>',
+        '<span class="zoom-level" data-role="level">100%</span>',
+        '<button type="button" data-action="zoom-in" title="Zoom in">+</button>',
+        '<button type="button" data-action="fit" title="Fit width">Fit</button>',
+        '<button type="button" data-action="reset" title="Reset view">Reset</button>'
+      ].join('');
+      container.insertBefore(toolbar, viewport);
+
+      const state = { scale: 1, x: 0, y: 0, dragging: false, startX: 0, startY: 0, originX: 0, originY: 0 };
+      const level = toolbar.querySelector('[data-role="level"]');
+
+      function applyTransform() {
+        svg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+        level.textContent = `${Math.round(state.scale * 100)}%`;
+      }
+
+      function zoomBy(delta) {
+        state.scale = clamp(state.scale + delta, 0.25, 3);
+        applyTransform();
+      }
+
+      function reset() {
+        state.scale = 1;
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      function fitWidth() {
+        const rawWidth = svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width
+          ? svg.viewBox.baseVal.width
+          : svg.getBoundingClientRect().width / state.scale;
+        if (!rawWidth) {
+          reset();
+          return;
+        }
+        state.scale = clamp((viewport.clientWidth - 48) / rawWidth, 0.25, 1.4);
+        state.x = 0;
+        state.y = 0;
+        applyTransform();
+      }
+
+      toolbar.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        if (action === 'zoom-in') zoomBy(0.15);
+        if (action === 'zoom-out') zoomBy(-0.15);
+        if (action === 'fit') fitWidth();
+        if (action === 'reset') reset();
+      });
+
+      viewport.addEventListener('wheel', (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        zoomBy(event.deltaY < 0 ? 0.1 : -0.1);
+      }, { passive: false });
+
+      viewport.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        state.dragging = true;
+        state.startX = event.clientX;
+        state.startY = event.clientY;
+        state.originX = state.x;
+        state.originY = state.y;
+        viewport.classList.add('is-dragging');
+        viewport.setPointerCapture(event.pointerId);
+      });
+
+      viewport.addEventListener('pointermove', (event) => {
+        if (!state.dragging) return;
+        state.x = state.originX + event.clientX - state.startX;
+        state.y = state.originY + event.clientY - state.startY;
+        applyTransform();
+      });
+
+      function endDrag(event) {
+        if (!state.dragging) return;
+        state.dragging = false;
+        viewport.classList.remove('is-dragging');
+        if (viewport.hasPointerCapture(event.pointerId)) {
+          viewport.releasePointerCapture(event.pointerId);
+        }
+      }
+
+      viewport.addEventListener('pointerup', endDrag);
+      viewport.addEventListener('pointercancel', endDrag);
+      applyTransform();
+    });
+  }
+
+  function renderMermaid() {
+    const result = mermaid.run
+      ? mermaid.run({ querySelector: '.mermaid' })
+      : Promise.resolve();
+    Promise.resolve(result)
+      .then(enhanceMermaidDiagrams)
+      .catch((error) => {
+        console.error('Mermaid render failed:', error);
+        enhanceMermaidDiagrams();
+      });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderMermaid);
+  } else {
+    renderMermaid();
+  }
+})();
+</script>
+
+</body>
+</html>
