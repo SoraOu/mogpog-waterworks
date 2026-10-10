@@ -19,7 +19,8 @@ import {
   currentMonth,
   getSetting,
 } from '../../db/queries';
-import { Account, ReadingRemark } from '../../types';
+import { Account, Reading, ReadingRemark } from '../../types';
+import { billingStatus, formatCuM, formatPeso } from '../../lib/billing';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
 const REMARKS: ReadingRemark[] = [
@@ -69,6 +70,7 @@ export default function ReadingEntryScreen() {
   const [notes, setNotes] = useState('');
   const [readerName, setReaderName] = useState('');
   const [saved, setSaved] = useState(false);
+  const [savedReading, setSavedReading] = useState<Reading | null>(null);
 
   // Month selection
   const monthOptions = generateMonthOptions();
@@ -174,8 +176,73 @@ export default function ReadingEntryScreen() {
       dateRecorded: recordedDate,
     });
 
+    const row = getReadingsForAccount(Number(id)).find((r) => r.month === selectedMonth) ?? null;
+    setSavedReading(row);
     setSaved(true);
-    setTimeout(() => router.back(), 600);
+  }
+
+  // Live bill while typing (nothing is billed for "No reading" or a lower-than-previous reading)
+  const typed = presentValue !== '' && !isNaN(present);
+  const liveBill =
+    typed && remark !== 'No reading' ? billingStatus(account.type, consumption, present, remark) : null;
+
+  if (saved && savedReading) {
+    const bill = billingStatus(account.type, savedReading.consumption, savedReading.presentReading, savedReading.remark);
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.subHeader}>
+          <Text style={styles.subName}>{account.subscriberName}</Text>
+          <Text style={styles.subBarangay}>
+            {account.barangayName} · {monthLabel(savedReading.month)}
+          </Text>
+        </View>
+
+        <View style={styles.resultCard}>
+          <Text style={styles.resultTitle}>✓  Reading saved</Text>
+          {savedReading.presentReading != null && (
+            <Text style={styles.resultLine}>
+              {savedReading.previousReading != null ? `${formatCuM(savedReading.previousReading)} → ` : ''}
+              {formatCuM(savedReading.presentReading)} m³
+              {savedReading.consumption != null ? `  ·  used ${formatCuM(savedReading.consumption)} m³` : ''}
+            </Text>
+          )}
+          {bill.kind === 'amount' && (
+            <>
+              <Text style={styles.resultAmountLabel}>Amount due</Text>
+              <Text style={styles.resultAmount}>{formatPeso(bill.amount)}</Text>
+            </>
+          )}
+          {bill.kind === 'check' && (
+            <Text style={styles.resultWarn}>
+              Check reading: the present reading is lower than the previous one, so no amount is billed.
+            </Text>
+          )}
+          {bill.kind === 'none' && (
+            <Text style={styles.resultMuted}>
+              {savedReading.remark === 'No reading' || savedReading.presentReading == null
+                ? 'No reading recorded, so there is nothing to bill.'
+                : 'No amount: there is no previous reading to compare with. Set the opening reading on the account page.'}
+            </Text>
+          )}
+        </View>
+
+        {bill.kind === 'amount' && (
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={() => router.push(`/receipt/${savedReading.id}`)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.saveBtnText}>🧾  Generate Receipt</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={styles.resultSecondary} onPress={() => setSaved(false)} activeOpacity={0.7}>
+          <Text style={styles.resultSecondaryText}>Edit this reading</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.resultSecondary} onPress={() => router.back()} activeOpacity={0.7}>
+          <Text style={styles.resultSecondaryText}>Done</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
   }
 
   const numpadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
@@ -219,6 +286,27 @@ export default function ReadingEntryScreen() {
           <Text style={styles.readingBoxUnit}>m³</Text>
         </View>
       </View>
+
+      {/* Live amount */}
+      {liveBill && liveBill.kind === 'amount' && (
+        <View style={styles.liveBox}>
+          <Text style={styles.liveLabel}>Amount due</Text>
+          <Text style={styles.liveAmount}>{formatPeso(liveBill.amount)}</Text>
+          {consumption !== null && <Text style={styles.liveSub}>{formatCuM(consumption)} m³ used</Text>}
+        </View>
+      )}
+      {liveBill && liveBill.kind === 'check' && (
+        <View style={[styles.liveBox, styles.liveBoxWarn]}>
+          <Text style={styles.liveWarn}>
+            Check reading: lower than the previous reading. No amount will be billed.
+          </Text>
+        </View>
+      )}
+      {liveBill && liveBill.kind === 'none' && prev === null && (
+        <View style={styles.liveBox}>
+          <Text style={styles.liveSub}>No amount yet: there is no previous reading. Set the opening reading on the account page.</Text>
+        </View>
+      )}
 
       {/* Numpad */}
       <View style={styles.numpad}>
@@ -275,11 +363,11 @@ export default function ReadingEntryScreen() {
         onChangeText={setReaderName}
       />
 
-      {/* Notes */}
-      <Text style={styles.sectionLabel}>Notes (optional)</Text>
+      {/* Remarks for this month (shown in the Excel REMARKS column) */}
+      <Text style={styles.sectionLabel}>Remarks (optional)</Text>
       <TextInput
         style={[styles.textInput, styles.notesInput]}
-        placeholder="Any additional notes..."
+        placeholder="Remarks for this month, also shown in the Excel file..."
         placeholderTextColor={Colors.textMuted}
         value={notes}
         onChangeText={setNotes}
@@ -542,4 +630,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   applyDateBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
+  liveBox: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.md,
+    alignItems: 'center',
+    gap: 2,
+  },
+  liveBoxWarn: { borderColor: Colors.orange },
+  liveLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '700', textTransform: 'uppercase' },
+  liveAmount: { fontSize: FontSize.xl, fontWeight: '800', color: Colors.primary },
+  liveSub: { fontSize: FontSize.sm, color: Colors.textSecondary, textAlign: 'center' },
+  liveWarn: { fontSize: FontSize.sm, color: Colors.orange, fontWeight: '700', textAlign: 'center' },
+  resultCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  resultTitle: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.green },
+  resultLine: { fontSize: FontSize.md, color: Colors.textSecondary },
+  resultAmountLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '700', textTransform: 'uppercase', marginTop: Spacing.sm },
+  resultAmount: { fontSize: 34, fontWeight: '800', color: Colors.primary },
+  resultWarn: { fontSize: FontSize.md, color: Colors.orange, fontWeight: '700', textAlign: 'center' },
+  resultMuted: { fontSize: FontSize.md, color: Colors.textSecondary, textAlign: 'center' },
+  resultSecondary: { paddingVertical: Spacing.sm, alignItems: 'center' },
+  resultSecondaryText: { color: Colors.textSecondary, fontWeight: '600', fontSize: FontSize.md },
 });

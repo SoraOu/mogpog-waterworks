@@ -56,6 +56,8 @@ export interface Reading {
   previousReading: number | null; // derived from the earlier month when saved; kept in step by the db layer
   presentReading: number | null;
   consumption: number | null;
+  /** Amount billed for this reading (PHP), saved with the reading. Null when there is nothing to bill. */
+  amount: number | null;
   remark: ReadingRemark | null;
   notes: string | null;
   recordedBy: string | null;

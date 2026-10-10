@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { computeAmount } from '../lib/billing';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -40,6 +41,7 @@ export function initDb(): void {
       previous_reading REAL,
       present_reading REAL,
       consumption REAL,
+      amount REAL,
       remark TEXT,
       notes TEXT,
       recorded_by TEXT,
@@ -65,6 +67,13 @@ export function initDb(): void {
   // Migration: add file_hash column to import_log for existing installs
   try {
     database.execSync(`ALTER TABLE import_log ADD COLUMN file_hash TEXT`);
+  } catch {
+    // column already exists, ignore
+  }
+
+  // Migration: the amount billed is saved with each reading
+  try {
+    database.execSync(`ALTER TABLE readings ADD COLUMN amount REAL`);
   } catch {
     // column already exists, ignore
   }
@@ -128,5 +137,30 @@ export function initDb(): void {
     }
   } catch {
     console.warn('[initDb] Opening-reading migration failed; will retry on next launch');
+  }
+
+  // Migration (runs once): fill in the amount for readings saved before billing existed.
+  try {
+    const done = database.getFirstSync<{ value: string }>(
+      `SELECT value FROM settings WHERE key = 'migrated_amount_v1'`
+    );
+    if (!done) {
+      const rows = database.getAllSync<{ id: number; consumption: number; type: string }>(
+        `SELECT r.id, r.consumption, a.type
+         FROM readings r JOIN accounts a ON a.id = r.account_id
+         WHERE r.amount IS NULL AND r.consumption IS NOT NULL AND r.consumption >= 0`
+      );
+      database.withTransactionSync(() => {
+        for (const r of rows) {
+          const amount = computeAmount(r.type, r.consumption);
+          if (amount !== null) database.runSync('UPDATE readings SET amount = ? WHERE id = ?', [amount, r.id]);
+        }
+        database.runSync(
+          `INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_amount_v1', '1')`
+        );
+      });
+    }
+  } catch {
+    console.warn('[initDb] Amount backfill failed; will retry on next launch');
   }
 }

@@ -1,4 +1,5 @@
 import { AccountType, LineStatus, MeterStatus } from '../types';
+import { workbookAmount } from '../lib/billing';
 
 // ---------------------------------------------------------------------------
 // Layout of sheet 1 ("WATER SUBSCRIBERS") of the official WATER READING SYSTEM
@@ -127,8 +128,7 @@ export function monthNumber(raw: unknown): number | null {
   }
   if (s === 'JLUY') return 7;
   if (s.length >= 3) {
-    for (let i = 0; i < 12; i++) if (MONTH_NAMES[i].startsWith(s.slice(0, 3)) && MONTH_NAMES[i].startsWith(s)) return i + 1;
-    for (let i = 0; i < 12; i++) if (MONTH_NAMES[i].slice(0, 3) === s.slice(0, 3)) return i + 1;
+    for (let i = 0; i < 12; i++) if (MONTH_NAMES[i].startsWith(s)) return i + 1;
   }
   return null;
 }
@@ -220,10 +220,44 @@ export function parseReading(raw: unknown): number | null {
   return parseFloat(s);
 }
 
-/** The workbook's tariff, used only to fill cached cell values so file previews show numbers. */
+/** Value Excel shows in the AMOUNT cell (same rates as the app, see lib/billing.ts). Used for cached values only. */
 export function tariffAmount(type: string, cu: number): number | 'Invalid Category' {
-  const t = norm(type);
-  if (t === 'RESIDENTIAL') return cu <= 12 ? 75 : (cu - 12) * 12.5 + 75;
-  if (t === 'COMMERCIAL') return cu <= 12 ? 150 : (cu - 12) * 15 + 150;
-  return 'Invalid Category';
+  return workbookAmount(type, cu);
+}
+
+const MONTH_ABBR = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+/** 0..11 -> 'JAN'..'DEC' */
+export function monthAbbr(monthIndex: number): string {
+  return MONTH_ABBR[monthIndex] ?? '';
+}
+
+/** Strict month word for a remark prefix: 3-letter abbreviation, SEPT, or the full name. */
+function strictMonth(word: string): number | null {
+  const w = word.toUpperCase();
+  const i3 = MONTH_ABBR.indexOf(w);
+  if (i3 >= 0) return i3 + 1;
+  if (w === 'SEPT') return 9;
+  const full = MONTH_NAMES.indexOf(w);
+  return full >= 0 ? full + 1 : null;
+}
+
+/**
+ * The REMARKS cell of the workbook holds one text per subscriber. The app writes
+ * the most recent month's remark there as "OCT: text". Reading it back:
+ * "OCT: tenant away" -> { month: 10, text: 'tenant away' }; anything else -> null
+ * (it is then kept as the account's own remarks).
+ */
+export function splitMonthRemark(raw: string | null | undefined): { month: number; text: string } | null {
+  if (!raw) return null;
+  const m = /^\s*([A-Za-z]{3,9})\.?\s*:\s*(\S[\s\S]*)$/.exec(raw);
+  if (!m) return null;
+  const month = strictMonth(m[1]);
+  if (!month) return null;
+  return { month, text: m[2].trim() };
+}
+
+/** "OCT: text" with line breaks flattened, for the REMARKS cell. */
+export function formatMonthRemark(monthIndex: number, text: string): string {
+  return `${monthAbbr(monthIndex)}: ${text.replace(/\s+/g, ' ').trim()}`;
 }

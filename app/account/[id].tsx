@@ -20,6 +20,7 @@ import {
 } from '../../db/queries';
 import { Account, Reading, LineStatus, MeterStatus } from '../../types';
 import StatusDot from '../../components/StatusDot';
+import { billingStatus, formatCuM, formatPeso } from '../../lib/billing';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
 function monthLabel(m: string) {
@@ -216,7 +217,8 @@ export default function AccountDetailScreen() {
                 <Text style={styles.readingMonth}>{monthLabel(r.month)}</Text>
                 <Text style={styles.readingMeta}>
                   {r.presentReading != null ? `${r.presentReading} m³` : '—'}
-                  {r.consumption != null ? `  ·  Δ ${r.consumption} m³` : ''}
+                  {r.consumption != null ? `  ·  Δ ${formatCuM(r.consumption)} m³` : ''}
+                  {r.amount != null ? `  ·  ${formatPeso(r.amount)}` : ''}
                   {r.remark && r.remark !== 'No issue' ? `  ·  ${r.remark}` : ''}
                 </Text>
               </View>
@@ -259,12 +261,30 @@ export default function AccountDetailScreen() {
                 value={selectedReading.consumption != null ? `${selectedReading.consumption} m³` : '—'}
               />
               {selectedReading.remark && <DetailItem label="Remark" value={selectedReading.remark} />}
-              {selectedReading.notes && <DetailItem label="Notes" value={selectedReading.notes} />}
+              {(() => {
+                const bill = billingStatus(account.type, selectedReading.consumption, selectedReading.presentReading, selectedReading.remark);
+                if (bill.kind === 'check') return <DetailItem label="Amount" value="Check reading" />;
+                const shown = selectedReading.amount ?? (bill.kind === 'amount' ? bill.amount : null);
+                return shown != null ? <DetailItem label="Amount" value={formatPeso(shown)} highlight /> : null;
+              })()}
+              {selectedReading.notes && <DetailItem label="Remarks" value={selectedReading.notes} />}
               {selectedReading.recordedBy && <DetailItem label="Recorded by" value={selectedReading.recordedBy} />}
               {selectedReading.dateRecorded && (
                 <DetailItem label="Date" value={new Date(selectedReading.dateRecorded).toLocaleString('en-PH')} />
               )}
             </View>
+            {billingStatus(account.type, selectedReading.consumption, selectedReading.presentReading, selectedReading.remark).kind === 'amount' && (
+              <TouchableOpacity
+                style={styles.receiptBtn}
+                onPress={() => {
+                  const rid = selectedReading.id;
+                  setSelectedReading(null);
+                  router.push(`/receipt/${rid}`);
+                }}
+              >
+                <Text style={styles.receiptBtnText}>🧾  Generate Receipt</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.deleteReadingBtn} onPress={() => handleDeleteReading(selectedReading)}>
               <Text style={styles.deleteReadingBtnText}>🗑 Delete Reading</Text>
             </TouchableOpacity>
@@ -460,6 +480,8 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: 'row', justifyContent: 'space-between' },
   detailLabel: { fontSize: FontSize.sm, color: Colors.textSecondary },
   detailValue: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary },
+  receiptBtn: { backgroundColor: Colors.primary, borderRadius: Radius.md, paddingVertical: Spacing.md, alignItems: 'center', marginTop: Spacing.sm },
+  receiptBtnText: { color: '#fff', fontWeight: '700', fontSize: FontSize.md },
   deleteReadingBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },
   deleteReadingBtnText: { color: Colors.red, fontWeight: '600' },
   closeBtn: { paddingVertical: Spacing.sm, alignItems: 'center' },

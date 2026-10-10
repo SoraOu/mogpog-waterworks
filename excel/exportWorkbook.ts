@@ -7,6 +7,7 @@ import {
   FIRST_DATA_ROW,
   MAX_SUBSCRIBERS,
   colName,
+  formatMonthRemark,
   lineToSheet,
   meterToSheet,
   monthCols,
@@ -130,7 +131,12 @@ function buildRow(a: ExportAccount, r: number, year: number): string {
   c.push(numCell(`${colName(COL.payYear)}${r}`, S.payYear, yr));
   c.push(textCell(`${colName(COL.payMonth)}${r}`, S.payMonth, monthToSheet(a.monthLastPayment)));
   c.push(numCell(`${colName(COL.balance)}${r}`, S.balance, a.remainingBalance));
-  c.push(textCell(`${colName(COL.remarks)}${r}`, S.text, a.remarks ?? ''));
+  // One REMARKS cell per subscriber: the most recent month's remark as "OCT: text",
+  // otherwise the account's own remarks.
+  const remarkText = a.monthRemark
+    ? formatMonthRemark(a.monthRemark.monthIndex, a.monthRemark.text)
+    : a.remarks ?? '';
+  c.push(textCell(`${colName(COL.remarks)}${r}`, S.text, remarkText));
 
   c.push(lookupCell(r));
 

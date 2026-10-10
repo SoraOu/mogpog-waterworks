@@ -1,5 +1,6 @@
 import { getDb } from './schema';
-import { norm, squash } from '../excel/format';
+import { norm, splitMonthRemark, squash } from '../excel/format';
+import { billingStatus } from '../lib/billing';
 import type { ExistingAccount, ImportPlan } from '../excel/importPlan';
 
 export function getImportContext(): { existing: ExistingAccount[]; barangays: string[] } {
@@ -22,28 +23,30 @@ export interface ImportResult {
 }
 
 /**
- * Recomputes previous_reading / consumption for every reading of one account
+ * Recomputes previous_reading / consumption / amount for every reading of one account
  * from the PRESENT values: previous = latest earlier present reading, or the
  * account's opening reading for the first one. Same rule as the db layer.
  */
 function rechainAccount(accountId: number): void {
   const db = getDb();
-  const acc = db.getFirstSync<{ previous_reading: number | null }>(
-    'SELECT previous_reading FROM accounts WHERE id = ?',
+  const acc = db.getFirstSync<{ previous_reading: number | null; type: string }>(
+    'SELECT previous_reading, type FROM accounts WHERE id = ?',
     [accountId]
   );
   let running: number | null = acc?.previous_reading ?? null;
 
-  const rows = db.getAllSync<{ id: number; present_reading: number | null }>(
-    'SELECT id, present_reading FROM readings WHERE account_id = ? ORDER BY month ASC',
+  const rows = db.getAllSync<{ id: number; present_reading: number | null; remark: string | null }>(
+    'SELECT id, present_reading, remark FROM readings WHERE account_id = ? ORDER BY month ASC',
     [accountId]
   );
   for (const r of rows) {
     if (r.present_reading === null) continue;
     const consumption = running !== null ? r.present_reading - running : null;
-    db.runSync('UPDATE readings SET previous_reading = ?, consumption = ? WHERE id = ?', [
+    const bill = billingStatus(acc?.type, consumption, r.present_reading, r.remark);
+    db.runSync('UPDATE readings SET previous_reading = ?, consumption = ?, amount = ? WHERE id = ?', [
       running,
       consumption,
+      bill.kind === 'amount' ? bill.amount : null,
       r.id,
     ]);
     running = r.present_reading;
@@ -78,6 +81,7 @@ export function applyImportPlan(plan: ImportPlan): ImportResult {
       const row = item.row;
 
       let accountId: number;
+      let typeChanged = false;
       if (item.action === 'create') {
         const bKey = norm(row.barangay);
         let barangayId = barangayIds.get(bKey);
@@ -102,13 +106,15 @@ export function applyImportPlan(plan: ImportPlan): ImportResult {
             row.payMonth,
             row.balance,
             row.januaryPast,
-            row.remarks,
+            null, // remarks are placed below, once the readings exist
           ]
         );
         accountId = db.getFirstSync<{ id: number }>('SELECT last_insert_rowid() AS id')!.id;
         result.created++;
       } else {
         accountId = item.accountId!;
+        const oldType = db.getFirstSync<{ type: string }>('SELECT type FROM accounts WHERE id = ?', [accountId])?.type;
+        typeChanged = row.type !== null && row.type !== oldType;
         const sets: string[] = [];
         const vals: (string | number | null)[] = [];
         const add = (col: string, v: string | number | null) => {
@@ -120,7 +126,6 @@ export function applyImportPlan(plan: ImportPlan): ImportResult {
         add('year_last_payment', row.payYear);
         add('month_last_payment', row.payMonth);
         add('remaining_balance', row.balance);
-        add('remarks', row.remarks);
 
         if (row.januaryPast !== null) {
           const earlier = db.getFirstSync<{ n: number }>(
@@ -164,9 +169,24 @@ export function applyImportPlan(plan: ImportPlan): ImportResult {
         }
         wrote++;
       }
-      if (wrote > 0) {
-        rechainAccount(accountId);
-        result.readingsWritten += wrote;
+      if (wrote > 0 || typeChanged) rechainAccount(accountId);
+      result.readingsWritten += wrote;
+
+      // REMARKS cell: "OCT: text" belongs to that month's reading; anything else is the account's remarks.
+      if (row.remarks !== null) {
+        const parsed = splitMonthRemark(row.remarks);
+        let placed = false;
+        if (parsed) {
+          const reading = db.getFirstSync<{ id: number }>(
+            'SELECT id FROM readings WHERE account_id = ? AND month = ?',
+            [accountId, `${plan.year}-${String(parsed.month).padStart(2, '0')}`]
+          );
+          if (reading) {
+            db.runSync('UPDATE readings SET notes = ? WHERE id = ?', [parsed.text, reading.id]);
+            placed = true;
+          }
+        }
+        if (!placed) db.runSync('UPDATE accounts SET remarks = ? WHERE id = ?', [row.remarks, accountId]);
       }
     }
   });

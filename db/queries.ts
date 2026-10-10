@@ -1,5 +1,6 @@
 import { getDb } from './schema';
 import { Account, Barangay, Reading, ImportLog, StatusColor } from '../types';
+import { billingStatus } from '../lib/billing';
 
 // --- Settings ------------------------------------------------------------
 export function getSetting(key: string): string | null {
@@ -53,14 +54,27 @@ export function getPreviousReading(accountId: number, month: string): number | n
   return acc?.previous_reading ?? null;
 }
 
+/** Amount to store for a reading: the tariff amount, or null when there is nothing to bill. */
+function amountToStore(
+  accountId: number,
+  consumption: number | null,
+  presentReading: number | null,
+  remark: string | null
+): number | null {
+  const db = getDb();
+  const acc = db.getFirstSync<{ type: string }>('SELECT type FROM accounts WHERE id = ?', [accountId]);
+  const bill = billingStatus(acc?.type, consumption, presentReading, remark);
+  return bill.kind === 'amount' ? bill.amount : null;
+}
+
 // After a reading is saved/deleted (or the opening reading changes), the next
 // later reading that has a present value must pick up its new previous value.
 // Only that one row can change: later rows depend on present values, which are
 // untouched. Pass '' to start from the beginning.
 function rechainAfter(accountId: number, afterMonth: string): void {
   const db = getDb();
-  const next = db.getFirstSync<{ id: number; month: string; present_reading: number }>(
-    `SELECT id, month, present_reading FROM readings
+  const next = db.getFirstSync<{ id: number; month: string; present_reading: number; remark: string | null }>(
+    `SELECT id, month, present_reading, remark FROM readings
      WHERE account_id = ? AND month > ? AND present_reading IS NOT NULL
      ORDER BY month ASC LIMIT 1`,
     [accountId, afterMonth]
@@ -69,9 +83,11 @@ function rechainAfter(accountId: number, afterMonth: string): void {
 
   const prev = getPreviousReading(accountId, next.month);
   const consumption = prev !== null ? next.present_reading - prev : null;
-  db.runSync('UPDATE readings SET previous_reading = ?, consumption = ? WHERE id = ?', [
+  const amount = amountToStore(accountId, consumption, next.present_reading, next.remark);
+  db.runSync('UPDATE readings SET previous_reading = ?, consumption = ?, amount = ? WHERE id = ?', [
     prev,
     consumption,
+    amount,
     next.id,
   ]);
 }
@@ -323,6 +339,7 @@ interface ReadingRow {
   previous_reading: number | null;
   present_reading: number | null;
   consumption: number | null;
+  amount: number | null;
   remark: string | null;
   notes: string | null;
   recorded_by: string | null;
@@ -337,6 +354,7 @@ function mapReading(r: ReadingRow): Reading {
     previousReading: r.previous_reading,
     presentReading: r.present_reading,
     consumption: r.consumption,
+    amount: r.amount,
     remark: r.remark as Reading['remark'],
     notes: r.notes,
     recordedBy: r.recorded_by,
@@ -376,14 +394,16 @@ export function saveReading(params: {
 }): void {
   const db = getDb();
   const now = params.dateRecorded ?? new Date().toISOString();
+  const amount = amountToStore(params.accountId, params.consumption, params.presentReading, params.remark);
 
   db.runSync(`
-    INSERT INTO readings (account_id, month, previous_reading, present_reading, consumption, remark, notes, recorded_by, date_recorded)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO readings (account_id, month, previous_reading, present_reading, consumption, amount, remark, notes, recorded_by, date_recorded)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id, month) DO UPDATE SET
       previous_reading = excluded.previous_reading,
       present_reading = excluded.present_reading,
       consumption = excluded.consumption,
+      amount = excluded.amount,
       remark = excluded.remark,
       notes = excluded.notes,
       recorded_by = excluded.recorded_by,
@@ -394,6 +414,7 @@ export function saveReading(params: {
     params.previousReading,
     params.presentReading,
     params.consumption,
+    amount,
     params.remark,
     params.notes,
     params.recordedBy,
@@ -472,6 +493,8 @@ export interface ExportAccount {
   remarks: string | null;
   januaryPast: number | null;
   present: (number | null)[]; // index 0 = January ... 11 = December
+  /** The most recent month in the year that has a remark (reading notes), for the REMARKS cell. */
+  monthRemark: { monthIndex: number; text: string } | null;
 }
 
 export function getAccountsForExport(year: number, barangayId?: number): ExportAccount[] {
@@ -535,6 +558,27 @@ export function getAccountsForExport(year: number, barangayId?: number): ExportA
     arr[idx] = r.present_reading;
   }
 
+  const noteParams: (string | number)[] = [first, last];
+  let noteWhere = '';
+  if (barangayId != null) {
+    noteWhere = 'AND a.barangay_id = ?';
+    noteParams.push(barangayId);
+  }
+  const notes = db.getAllSync<{ account_id: number; month: string; notes: string }>(`
+    SELECT r.account_id, r.month, r.notes
+    FROM readings r
+    JOIN accounts a ON a.id = r.account_id
+    WHERE r.month >= ? AND r.month <= ? AND r.notes IS NOT NULL AND TRIM(r.notes) <> ''
+    ${noteWhere}
+    ORDER BY r.month ASC
+  `, noteParams);
+  const latestNote = new Map<number, { monthIndex: number; text: string }>();
+  for (const n of notes) {
+    const idx = parseInt(n.month.slice(5, 7), 10) - 1;
+    if (idx < 0 || idx > 11) continue;
+    latestNote.set(n.account_id, { monthIndex: idx, text: n.notes.trim() }); // ascending order: last one wins
+  }
+
   return accounts.map((a) => ({
     id: a.id,
     barangay: a.barangay_name,
@@ -548,6 +592,7 @@ export function getAccountsForExport(year: number, barangayId?: number): ExportA
     remarks: a.remarks,
     januaryPast: a.january_past,
     present: byAccount.get(a.id) ?? new Array<number | null>(12).fill(null),
+    monthRemark: latestNote.get(a.id) ?? null,
   }));
 }
 
