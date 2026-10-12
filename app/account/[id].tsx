@@ -265,7 +265,13 @@ export default function AccountDetailScreen() {
                 const bill = billingStatus(account.type, selectedReading.consumption, selectedReading.presentReading, selectedReading.remark);
                 if (bill.kind === 'check') return <DetailItem label="Amount" value="Check reading" />;
                 const shown = selectedReading.amount ?? (bill.kind === 'amount' ? bill.amount : null);
-                return shown != null ? <DetailItem label="Amount" value={formatPeso(shown)} highlight /> : null;
+                return shown != null ? (
+                  <DetailItem
+                    label="Amount"
+                    value={bill.kind === 'amount' && bill.flat ? `${formatPeso(shown)} (flat rate)` : formatPeso(shown)}
+                    highlight
+                  />
+                ) : null;
               })()}
               {selectedReading.notes && <DetailItem label="Remarks" value={selectedReading.notes} />}
               {selectedReading.recordedBy && <DetailItem label="Recorded by" value={selectedReading.recordedBy} />}

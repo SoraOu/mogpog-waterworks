@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import { computeAmount } from '../lib/billing';
+import { billingStatus, computeAmount } from '../lib/billing';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -162,5 +162,30 @@ export function initDb(): void {
     }
   } catch {
     console.warn('[initDb] Amount backfill failed; will retry on next launch');
+  }
+
+  // Migration (runs once): readings remarked "Blurred meter" are billed the flat minimum.
+  try {
+    const done = database.getFirstSync<{ value: string }>(
+      `SELECT value FROM settings WHERE key = 'migrated_blurred_amount_v1'`
+    );
+    if (!done) {
+      const rows = database.getAllSync<{ id: number; type: string }>(
+        `SELECT r.id, a.type
+         FROM readings r JOIN accounts a ON a.id = r.account_id
+         WHERE r.remark = 'Blurred meter'`
+      );
+      database.withTransactionSync(() => {
+        for (const r of rows) {
+          const bill = billingStatus(r.type, null, null, 'Blurred meter');
+          if (bill.kind === 'amount') database.runSync('UPDATE readings SET amount = ? WHERE id = ?', [bill.amount, r.id]);
+        }
+        database.runSync(
+          `INSERT OR REPLACE INTO settings (key, value) VALUES ('migrated_blurred_amount_v1', '1')`
+        );
+      });
+    }
+  } catch {
+    console.warn('[initDb] Blurred-meter amount backfill failed; will retry on next launch');
   }
 }

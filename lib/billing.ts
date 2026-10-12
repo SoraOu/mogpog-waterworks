@@ -6,9 +6,15 @@
 //   Residential: PHP 75 covers up to 12 m3, then PHP 12.50 per m3 above that.
 //   Commercial:  PHP 150 covers up to 12 m3, then PHP 15 per m3 above that.
 //   Zero usage still pays the minimum.
+//   A reading remarked "Blurred meter" cannot be read, so it is billed the flat
+//   minimum of its class.
+//   After the due date the bill is the current charges plus 15 percent.
 // ---------------------------------------------------------------------------
 
 export const INCLUDED_CU_M = 12;
+
+/** Added to the current charges when the bill is paid after the due date. */
+export const AFTER_DUE_RATE = 0.15;
 
 export const RATES: Record<'RESIDENTIAL' | 'COMMERCIAL', { minimum: number; perCuM: number }> = {
   RESIDENTIAL: { minimum: 75, perCuM: 12.5 },
@@ -46,7 +52,8 @@ export function workbookAmount(type: string | null | undefined, cu: number): num
 }
 
 export type BillingStatus =
-  | { kind: 'amount'; amount: number }
+  /** `flat` is true for a blurred meter: billed the class minimum, not by usage */
+  | { kind: 'amount'; amount: number; flat?: boolean }
   /** consumption is negative: typo or replaced meter - do not bill until confirmed */
   | { kind: 'check' }
   /** nothing to bill: no reading, no previous reading to compare with, or unknown class */
@@ -59,6 +66,10 @@ export function billingStatus(
   remark?: string | null
 ): BillingStatus {
   if (remark === 'No reading') return { kind: 'none' };
+  if (remark === 'Blurred meter') {
+    const rate = rateFor(type);
+    return rate ? { kind: 'amount', amount: rate.minimum, flat: true } : { kind: 'none' };
+  }
   if (presentReading !== undefined && presentReading === null) return { kind: 'none' };
   if (consumption == null || !isFinite(consumption)) return { kind: 'none' };
   if (consumption < 0) return { kind: 'check' };
@@ -77,4 +88,14 @@ export function formatPeso(n: number): string {
 /** Consumption for display, without floating-point noise: 12.300000000000001 -> "12.3" */
 export function formatCuM(n: number): string {
   return String(Math.round(n * 1000) / 1000);
+}
+
+/**
+ * Amount to pay after the due date: current charges + 15 percent of them,
+ * rounded to the nearest centavo (done in whole centavos to avoid float errors,
+ * e.g. 79.50 -> 91.43). Applies to the current charges only.
+ */
+export function amountAfterDue(amount: number): number {
+  const centavos = Math.round(amount * 100);
+  return Math.round((centavos * (100 + AFTER_DUE_RATE * 100)) / 100) / 100;
 }

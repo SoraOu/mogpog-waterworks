@@ -145,7 +145,8 @@ export default function ReadingEntryScreen() {
       return;
     }
 
-    const presentNum = presentValue !== '' ? parseFloat(presentValue) : null;
+    // a blurred meter cannot be read: bill the flat rate and save no reading
+    const presentNum = remark !== 'Blurred meter' && presentValue !== '' ? parseFloat(presentValue) : null;
     if (presentNum !== null && prev !== null && presentNum < prev) {
       Alert.alert(
         'Reading is lower than previous',
@@ -184,7 +185,11 @@ export default function ReadingEntryScreen() {
   // Live bill while typing (nothing is billed for "No reading" or a lower-than-previous reading)
   const typed = presentValue !== '' && !isNaN(present);
   const liveBill =
-    typed && remark !== 'No reading' ? billingStatus(account.type, consumption, present, remark) : null;
+    remark === 'Blurred meter'
+      ? billingStatus(account.type, null, null, remark)
+      : typed && remark !== 'No reading'
+      ? billingStatus(account.type, consumption, present, remark)
+      : null;
 
   if (saved && savedReading) {
     const bill = billingStatus(account.type, savedReading.consumption, savedReading.presentReading, savedReading.remark);
@@ -208,7 +213,7 @@ export default function ReadingEntryScreen() {
           )}
           {bill.kind === 'amount' && (
             <>
-              <Text style={styles.resultAmountLabel}>Amount due</Text>
+              <Text style={styles.resultAmountLabel}>{bill.flat ? 'Amount due - flat rate' : 'Amount due'}</Text>
               <Text style={styles.resultAmount}>{formatPeso(bill.amount)}</Text>
             </>
           )}
@@ -290,9 +295,13 @@ export default function ReadingEntryScreen() {
       {/* Live amount */}
       {liveBill && liveBill.kind === 'amount' && (
         <View style={styles.liveBox}>
-          <Text style={styles.liveLabel}>Amount due</Text>
+          <Text style={styles.liveLabel}>{liveBill.flat ? 'Flat rate - blurred meter' : 'Amount due'}</Text>
           <Text style={styles.liveAmount}>{formatPeso(liveBill.amount)}</Text>
-          {consumption !== null && <Text style={styles.liveSub}>{formatCuM(consumption)} m³ used</Text>}
+          {liveBill.flat ? (
+            <Text style={styles.liveSub}>Billed at the minimum. No reading is saved for a blurred meter.</Text>
+          ) : (
+            consumption !== null && <Text style={styles.liveSub}>{formatCuM(consumption)} m³ used</Text>
+          )}
         </View>
       )}
       {liveBill && liveBill.kind === 'check' && (

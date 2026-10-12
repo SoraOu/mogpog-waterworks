@@ -71,10 +71,11 @@ export default function ReceiptScreen() {
     accountClass: account.type.toUpperCase(),
     billingMonth: monthLabel(reading.month),
     readDate: longDate(reading.dateRecorded),
-    presentReading: reading.presentReading as number,
+    presentReading: reading.presentReading,
     previousReading: reading.previousReading,
-    consumed: reading.consumption as number,
+    consumed: reading.consumption,
     amount: bill.amount,
+    flat: bill.flat === true,
     reader: reading.recordedBy ?? '',
   };
 

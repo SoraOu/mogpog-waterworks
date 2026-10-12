@@ -100,14 +100,25 @@ function buildRow(a: ExportAccount, r: number, year: number): string {
     const amtRef = `${colName(cols.amount)}${r}`;
 
     const present = a.present[m] ?? null;
-    // Value Excel will compute for PAST (empty cells count as 0)
-    const pastVal = m === 0 ? a.januaryPast ?? 0 : a.present[m - 1] ?? 0;
+
+    // Last meter reading before this month (the opening reading when none yet)
+    let lastKnown = a.januaryPast ?? 0;
+    for (let k = 0; k < m; k++) if (a.present[k] != null) lastKnown = a.present[k] as number;
+
+    // Value Excel will compute for PAST
+    const prevHasReading = m > 0 && a.present[m - 1] != null;
+    const pastVal = m === 0 ? a.januaryPast ?? 0 : prevHasReading ? (a.present[m - 1] as number) : lastKnown;
 
     if (m === 0) {
       c.push(numCell(pastRef, S.text, a.januaryPast));
     } else {
       const prevPres = `${colName(monthCols(m - 1).present)}${r}`;
-      c.push(`<c r="${pastRef}" s="${S.derived}"><f>${prevPres}</f><v>${num(pastVal)}</v></c>`);
+      // The workbook's PAST is the previous month's PRESENT. When that month has no reading
+      // (blurred meter, no reading) the plain formula would give 0 and bill the whole meter
+      // value next month, so fall back to the last known reading. Once the missing PRESENT is
+      // typed in Excel, the formula follows it again.
+      const f = prevHasReading ? prevPres : `IF(ISNUMBER(${prevPres}),${prevPres},${num(lastKnown)})`;
+      c.push(`<c r="${pastRef}" s="${S.derived}"><f>${f}</f><v>${num(pastVal)}</v></c>`);
     }
 
     c.push(numCell(presRef, S.text, present));

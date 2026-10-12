@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { formatCuM, formatPeso } from '../lib/billing';
+import { amountAfterDue, formatCuM, formatPeso } from '../lib/billing';
 
 // E-receipt laid out like sheet 2 ("WATER BILLING") of the official workbook:
 // header, subscriber block, billing dates, METER DETAILS, charges, reader, footer.
-// Due Date and Amount After Due Date are left as blank lines for now.
+// Due Date is left as a blank line for now. Amount After Due Date = current charges + 15 percent.
 
 export interface ReceiptData {
   name: string;
@@ -12,10 +12,12 @@ export interface ReceiptData {
   accountClass: string;
   billingMonth: string; // e.g. "October 2026"
   readDate: string; // e.g. "October 8, 2026"
-  presentReading: number;
+  presentReading: number | null;
   previousReading: number | null;
-  consumed: number;
+  consumed: number | null;
   amount: number;
+  /** Blurred meter: billed the flat minimum of the class instead of by usage. */
+  flat?: boolean;
   reader: string;
 }
 
@@ -61,12 +63,19 @@ export default function Receipt({ data }: { data: ReceiptData }) {
       <View style={styles.rule} />
 
       <Text style={styles.section}>METER DETAILS</Text>
-      <Row label="Present Reading:" value={`${formatCuM(data.presentReading)} m³`} />
+      <Row
+        label="Present Reading:"
+        value={data.presentReading != null ? `${formatCuM(data.presentReading)} m³` : '—'}
+      />
       <Row
         label="Previous Reading:"
         value={data.previousReading != null ? `${formatCuM(data.previousReading)} m³` : '—'}
       />
-      <Row label="Total Consumed:" value={`${formatCuM(data.consumed)} m³`} />
+      <Row
+        label="Total Consumed:"
+        value={data.flat || data.consumed == null ? 'Flat rate' : `${formatCuM(data.consumed)} m³`}
+      />
+      {data.flat && <Text style={styles.flatNote}>Meter not readable - billed at the minimum rate.</Text>}
 
       <View style={styles.rule} />
 
@@ -74,7 +83,10 @@ export default function Receipt({ data }: { data: ReceiptData }) {
         <Text style={styles.chargeLabel}>Total Current Charges:</Text>
         <Text style={styles.chargeValue}>{formatPeso(data.amount)}</Text>
       </View>
-      <BlankRow label="Amount After Due Date:" />
+      <View style={styles.row}>
+        <Text style={styles.label}>Amount After Due Date:</Text>
+        <Text style={styles.valueBold}>{formatPeso(amountAfterDue(data.amount))}</Text>
+      </View>
 
       <View style={styles.gap} />
 
@@ -103,6 +115,8 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'flex-end', marginVertical: 3 },
   label: { fontSize: 13, color: '#000', fontWeight: '600', marginRight: 8 },
   value: { flex: 1, fontSize: 13, color: '#000', textAlign: 'right' },
+  valueBold: { flex: 1, fontSize: 14, color: '#000', fontWeight: '700', textAlign: 'right' },
+  flatNote: { fontSize: 11, color: '#000', fontStyle: 'italic', textAlign: 'right', marginTop: 1 },
   blankLine: { flex: 1, height: 14, borderBottomWidth: 1, borderBottomColor: '#000' },
   chargeLabel: { fontSize: 14, color: '#000', fontWeight: '800', marginRight: 8 },
   chargeValue: { flex: 1, fontSize: 18, color: '#000', fontWeight: '800', textAlign: 'right' },
