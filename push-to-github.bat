@@ -31,6 +31,60 @@ if not defined BRANCH (
   exit /b 1
 )
 
+REM --- choose where to push: this branch, or a new one ---------------
+:branch_menu
+echo Current branch: %BRANCH%
+echo.
+echo   1  Push to this branch - %BRANCH%
+echo   2  Create a NEW branch and push to it
+echo   3  Quit
+echo.
+choice /c 123 /n /m "Choose 1 to 3: "
+if errorlevel 3 exit /b 0
+if errorlevel 2 goto :new_branch
+if /i "%BRANCH%"=="main" goto :warn_main
+if /i "%BRANCH%"=="master" goto :warn_main
+goto :after_branch
+
+:warn_main
+echo.
+echo You are on %BRANCH%. Pushing here puts these changes into your main version.
+choice /c YN /m "Push to %BRANCH% anyway"
+if errorlevel 2 goto :branch_menu
+goto :after_branch
+
+:new_branch
+echo.
+set "NEWB="
+set /p "NEWB=New branch name, for example encrypted-export, or press Enter to go back: "
+if not defined NEWB goto :branch_menu
+set "NEWB=%NEWB:"=%"
+set "NEWB=%NEWB: =-%"
+git check-ref-format --branch "%NEWB%" >nul 2>nul
+if errorlevel 1 (
+  echo That is not a valid branch name. Use letters, numbers and hyphens.
+  goto :new_branch
+)
+git show-ref --verify --quiet "refs/heads/%NEWB%"
+if not errorlevel 1 (
+  echo A branch named %NEWB% already exists. Choose another name.
+  goto :new_branch
+)
+git checkout -b "%NEWB%"
+if errorlevel 1 (
+  echo.
+  echo Could not create the branch - see the message above. Nothing was pushed.
+  pause
+  exit /b 1
+)
+set "BRANCH=%NEWB%"
+echo.
+echo Created and switched to branch %BRANCH%. Your uncommitted changes came with you.
+echo The old branch was not changed.
+echo.
+
+:after_branch
+
 REM --- keep the generated android folder, and the app signing key in it, out of GitHub ---
 findstr /b /c:"/android" .gitignore >nul 2>nul
 if errorlevel 1 (
@@ -83,11 +137,11 @@ if not defined MSG set "MSG=Update"
 git add -A
 
 REM --- never push keys or private env files ----------------------------
-git diff --cached --name-only --diff-filter=d | findstr /i /r "\.keystore$ \.jks$ \.p12$ \.pem$ \.env" >nul
+git diff --cached --name-only --diff-filter=d | findstr /i /r "\.keystore$ \.jks$ \.p12$ \.pem$ \.key\.json$ \.env" >nul
 if not errorlevel 1 (
   echo.
   echo STOPPED: a key or env file is staged. Nothing was committed.
-  git diff --cached --name-only --diff-filter=d | findstr /i /r "\.keystore$ \.jks$ \.p12$ \.pem$ \.env"
+  git diff --cached --name-only --diff-filter=d | findstr /i /r "\.keystore$ \.jks$ \.p12$ \.pem$ \.key\.json$ \.env"
   git reset -q
   pause
   exit /b 1

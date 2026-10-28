@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mogpog Waterworks – Admin decrypt tool</title>
+<style>
+:root{--bg:#f0f4f8;--card:#fff;--ink:#1a2530;--mute:#5d7180;--line:#d5e8f4;--brand:#1b4f72;--brand-ink:#fff;--ok:#1e8449;--ok-bg:#eafaf1;--bad:#b03a2e;--bad-bg:#fdedec}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1a22;--card:#16252f;--ink:#e6eef4;--mute:#9db1bf;--line:#27404f;--brand:#5dade2;--brand-ink:#0b1720;--ok:#58d68d;--ok-bg:#12301f;--bad:#f1948a;--bad-bg:#3a1a17}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.4rem;margin:0 0 4px}
+p.lead{margin:0 0 20px;color:var(--mute)}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:16px}
+h2{font-size:1.05rem;margin:0 0 4px}
+section>p{margin:0 0 12px;color:var(--mute);font-size:.92rem}
+label{display:block;font-weight:600;font-size:.9rem;margin:12px 0 4px}
+input[type=password],input[type=text]{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+input[type=file]{width:100%;font:inherit;color:var(--ink)}
+button{margin-top:14px;padding:10px 16px;border:0;border-radius:6px;background:var(--brand);color:var(--brand-ink);font:inherit;font-weight:700;cursor:pointer}
+button.alt{background:transparent;color:var(--brand);border:1px solid var(--brand)}
+button:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:3px solid var(--brand);outline-offset:2px}
+.msg{margin-top:12px;padding:10px 12px;border-radius:6px;font-size:.92rem;display:none;overflow-wrap:anywhere}
+.msg.ok{display:block;background:var(--ok-bg);color:var(--ok)}
+.msg.bad{display:block;background:var(--bad-bg);color:var(--bad)}
+code,textarea{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85rem}
+textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);resize:none}
+.warn{font-size:.9rem;border-left:4px solid var(--bad);padding:6px 12px;margin-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>Admin decrypt tool</h1>
+<p class="lead">Works fully offline. Nothing you enter or open here leaves this page.</p>
+
+<section id="open">
+  <h2>Open an export</h2>
+  <p>Use this every time a reader sends you a <code>.xlsx.enc</code> file.</p>
+  <label for="keyfile">Your private key file</label>
+  <input type="file" id="keyfile" accept=".json,application/json">
+  <label for="pass1">Key passphrase</label>
+  <input type="password" id="pass1" autocomplete="off">
+  <label for="encfile">Encrypted export (.enc)</label>
+  <input type="file" id="encfile">
+  <button id="decryptBtn">Decrypt and download .xlsx</button>
+  <div class="msg" id="openMsg" role="status"></div>
+</section>
+
+<section id="create">
+  <h2>Create your key (do this once)</h2>
+  <p>Choose a passphrase of at least 12 characters. The tool makes a private key file protected by that passphrase, and a public key to place in the app.</p>
+  <label for="pass2">New passphrase</label>
+  <input type="password" id="pass2" autocomplete="new-password">
+  <label for="pass3">Repeat passphrase</label>
+  <input type="password" id="pass3" autocomplete="new-password">
+  <button id="createBtn" class="alt">Create key</button>
+  <div class="msg" id="createMsg" role="status"></div>
+  <div id="createOut" hidden>
+    <label for="pubkey">Public key (paste into constants/adminKey.ts)</label>
+    <textarea id="pubkey" rows="2" readonly></textarea>
+    <div class="warn">Keep the downloaded <code>.key.json</code> file and the passphrase in two separate safe places, and keep a second copy with another trusted officer. If both are lost, every export is permanently unreadable. Never put the key file on a reader's phone or in the app repository.</div>
+  </div>
+</section>
+</main>
+
+<script>/*NACL*/</script>
+<script>
+"use strict";
+var MW = (function () {
+  var MAGIC = [0x4d, 0x57, 0x45, 0x31]; // "MWE1"
+  var ITER = 600000;
+  var enc = new TextEncoder();
+
+  function b64(bytes) {
+    var s = "";
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+  function unb64(str) {
+    var s = atob(str), out = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+  function hex(bytes) {
+    return Array.prototype.map.call(bytes, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+  }
+  function fingerprint(keyId) { return hex(keyId).toUpperCase().match(/.{4}/g).join("-"); }
+  function keyId(pub) { return nacl.hash(pub).slice(0, 8); }
+
+  function deriveKey(pass, salt, iter) {
+    return crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"])
+      .then(function (k) {
+        return crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: salt, iterations: iter }, k, 256);
+      })
+      .then(function (bits) { return new Uint8Array(bits); });
+  }
+
+  // Returns { keyFile: <object to save>, publicKey: <base64>, fingerprint }
+  function createKey(pass, iter) {
+    iter = iter || ITER;
+    if (!pass || pass.length < 12) return Promise.reject(new Error("The passphrase must be at least 12 characters."));
+    var kp = nacl.box.keyPair();
+    var salt = nacl.randomBytes(16), nonce = nacl.randomBytes(24);
+    return deriveKey(pass, salt, iter).then(function (wrap) {
+      var box = nacl.secretbox(kp.secretKey, nonce, wrap);
+      return {
+        publicKey: b64(kp.publicKey),
+        fingerprint: fingerprint(keyId(kp.publicKey)),
+        keyFile: {
+          app: "mogpog-waterworks", v: 1, publicKey: b64(kp.publicKey),
+          kdf: { name: "PBKDF2-SHA256", iterations: iter, salt: b64(salt) },
+          nonce: b64(nonce), box: b64(box)
+        }
+      };
+    });
+  }
+
+  function unlockKey(keyFile, pass) {
+    if (!keyFile || keyFile.app !== "mogpog-waterworks" || keyFile.v !== 1 || !keyFile.kdf) {
+      return Promise.reject(new Error("That is not a Mogpog Waterworks private key file."));
+    }
+    return deriveKey(pass, unb64(keyFile.kdf.salt), keyFile.kdf.iterations).then(function (wrap) {
+      var secret = nacl.secretbox.open(unb64(keyFile.box), unb64(keyFile.nonce), wrap);
+      if (!secret) throw new Error("Wrong passphrase.");
+      return { secretKey: secret, publicKey: unb64(keyFile.publicKey) };
+    });
+  }
+
+  // data: Uint8Array of an .enc file. Returns the original .xlsx bytes.
+  function decryptExport(data, key) {
+    if (data.length < 68 + 16 || MAGIC.some(function (m, i) { return data[i] !== m; })) {
+      throw new Error("This is not an encrypted Mogpog Waterworks export.");
+    }
+    var fileKeyId = data.slice(4, 12);
+    if (hex(fileKeyId) !== hex(keyId(key.publicKey))) {
+      throw new Error("This file was encrypted for a different admin key (" + fingerprint(fileKeyId) +
+        "). Your key is " + fingerprint(keyId(key.publicKey)) + ".");
+    }
+    var plain = nacl.box.open(data.slice(68), data.slice(44, 68), data.slice(12, 44), key.secretKey);
+    if (!plain) throw new Error("The file is damaged or has been modified, so it was not opened.");
+    return plain;
+  }
+
+  return { createKey: createKey, unlockKey: unlockKey, decryptExport: decryptExport, b64: b64 };
+})();
+
+if (typeof document !== "undefined") (function () {
+  function $(id) { return document.getElementById(id); }
+  function show(el, cls, text) { el.className = "msg " + cls; el.textContent = text; }
+  function readFile(file) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(r.result); };
+      r.onerror = function () { rej(new Error("Could not read the file.")); };
+      r.readAsArrayBuffer(file);
+    });
+  }
+  function download(bytes, name, type) {
+    var url = URL.createObjectURL(new Blob([bytes], { type: type }));
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+  }
+
+  $("createBtn").onclick = function () {
+    var msg = $("createMsg"), btn = $("createBtn");
+    if ($("pass2").value !== $("pass3").value) return show(msg, "bad", "The two passphrases do not match.");
+    btn.disabled = true; show(msg, "ok", "Creating key…");
+    MW.createKey($("pass2").value).then(function (r) {
+      download(JSON.stringify(r.keyFile, null, 2), "mogpog-admin-private.key.json", "application/json");
+      $("pubkey").value = r.publicKey; $("createOut").hidden = false;
+      show(msg, "ok", "Key created (ID " + r.fingerprint + "). The private key file was downloaded.");
+    }).catch(function (e) { show(msg, "bad", e.message); })
+      .then(function () { btn.disabled = false; });
+  };
+
+  $("decryptBtn").onclick = function () {
+    var msg = $("openMsg"), btn = $("decryptBtn");
+    var kf = $("keyfile").files[0], ef = $("encfile").files[0];
+    if (!kf || !ef) return show(msg, "bad", "Choose both your private key file and the encrypted export.");
+    btn.disabled = true; show(msg, "ok", "Decrypting…");
+    Promise.all([readFile(kf), readFile(ef)]).then(function (r) {
+      var keyFile = JSON.parse(new TextDecoder().decode(new Uint8Array(r[0])));
+      return MW.unlockKey(keyFile, $("pass1").value).then(function (key) {
+        var plain = MW.decryptExport(new Uint8Array(r[1]), key);
+        var name = ef.name.replace(/\.enc$/i, "");
+        if (!/\.xlsx$/i.test(name)) name += ".xlsx";
+        download(plain, name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        show(msg, "ok", "Done. Saved as " + name + ".");
+      });
+    }).catch(function (e) {
+      show(msg, "bad", e instanceof SyntaxError ? "That key file is damaged." : e.message);
+    }).then(function () { btn.disabled = false; });
+  };
+})();
+</script>
+</body>
+</html>

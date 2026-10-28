@@ -22,11 +22,16 @@ import {
 } from '../../db/queries';
 import { buildOfficialWorkbook } from '../../excel/exportWorkbook';
 import { bytesToBase64 } from '../../excel/base64';
+import { encryptForAdmin, adminKeyFingerprint, AdminKeyError } from '../../lib/exportCrypto';
+import { purgeOldExports } from '../../lib/exportCleanup';
+import { ADMIN_PUBLIC_KEY } from '../../constants/adminKey';
 import { Colors, Spacing, FontSize, Radius } from '../../constants/theme';
 
 type BarangayMeta = { id: number; name: string };
 
-const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+// The file is encrypted, so it is shared as opaque binary data rather than as a spreadsheet.
+const ENC_MIME = 'application/octet-stream';
+const KEY_FINGERPRINT = adminKeyFingerprint(ADMIN_PUBLIC_KEY);
 
 function monthLabel(m: string): string {
   const [y, mo] = m.split('-');
@@ -55,7 +60,7 @@ export default function ExportScreen() {
     setYears(yearOptions());
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); purgeOldExports(); }, [load]));
 
   // barangay omitted => every subscriber, in one file
   async function doExport(key: string, barangay?: BarangayMeta) {
@@ -64,6 +69,15 @@ export default function ExportScreen() {
       // let the spinner render before the heavy synchronous work
       await new Promise((r) => setTimeout(r, 50));
 
+      if (!KEY_FINGERPRINT) {
+        Alert.alert(
+          'Export is locked',
+          'The admin key is not set up in this build, so files cannot be encrypted. Ask the admin to provide the key and rebuild the app.'
+        );
+        return;
+      }
+
+      await purgeOldExports();
       const accounts = getAccountsForExport(selectedYear, barangay?.id);
       if (accounts.length === 0) {
         Alert.alert('Nothing to export', 'There are no subscribers to export yet.');
@@ -71,19 +85,21 @@ export default function ExportScreen() {
       }
 
       const bytes = buildOfficialWorkbook(accounts, selectedYear);
-      const b64 = bytesToBase64(bytes);
+      // Only the encrypted bytes are ever written to storage or shared.
+      const b64 = bytesToBase64(encryptForAdmin(bytes, ADMIN_PUBLIC_KEY));
 
       const safeBarangay = barangay ? '_' + barangay.name.replace(/[^A-Za-z0-9]+/g, '_') : '';
-      const filename = `WATER_READING_SYSTEM${safeBarangay}_${selectedYear}.xlsx`;
+      const filename = `WATER_READING_SYSTEM${safeBarangay}_${selectedYear}.xlsx.enc`;
       const path = FileSystem.cacheDirectory + filename;
       await FileSystem.writeAsStringAsync(path, b64, { encoding: FileSystem.EncodingType.Base64 });
       await Sharing.shareAsync(path, {
-        mimeType: XLSX_MIME,
+        mimeType: ENC_MIME,
         dialogTitle: barangay ? `Export – ${barangay.name}` : 'Export – All Barangays',
       });
     } catch (e) {
       console.error(e);
-      Alert.alert('Export failed', String(e));
+      if (e instanceof AdminKeyError) Alert.alert('Export is locked', e.message);
+      else Alert.alert('Export failed', String(e));
     } finally {
       setLoading(null);
     }
@@ -99,6 +115,11 @@ export default function ExportScreen() {
         <Text style={styles.hint}>
           The file is the official WATER READING SYSTEM workbook: all 12 months of the year, with the
           workbook's own formulas for CU.M USED and AMOUNT.
+        </Text>
+        <Text style={styles.hint}>
+          {KEY_FINGERPRINT
+            ? `🔒 Encrypted for the admin (key ${KEY_FINGERPRINT}). Only the admin can open the file.`
+            : '⚠️ Admin key not set: export is disabled until the app is built with the admin key.'}
         </Text>
         <TouchableOpacity style={styles.monthBtn} onPress={() => setShowYearPicker(true)}>
           <Text style={styles.monthBtnText}>{selectedYear}</Text>
