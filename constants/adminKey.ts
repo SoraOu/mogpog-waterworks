@@ -6,4 +6,4 @@
 //   1. The admin opens admin-tool/decrypt.html, creates a key, and copies the "Public key" it shows.
 //   2. Paste it between the quotes below and rebuild the app.
 // Never put the private key (the .key.json file) in this repo or on a reader's phone.
-export const ADMIN_PUBLIC_KEY = '';
+export const ADMIN_PUBLIC_KEY = 'WvLMUq5VbZ3KHqP1UHFbD3Laks7gxWAj8YjOmuMxSXU=';

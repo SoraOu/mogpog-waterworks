@@ -42,6 +42,8 @@ if not exist "android\gradlew.bat" (
 )
 call :deps
 if errorlevel 1 exit /b 1
+call :sync_native
+if errorlevel 1 exit /b 1
 call :find_device
 if errorlevel 1 exit /b 1
 
@@ -111,9 +113,11 @@ exit /b 0
 
 REM ===== helpers ===========================================================
 :deps
+REM check every dependency in package.json, not a hand-picked list
 set "NEED="
-if not exist "node_modules\fflate" set "NEED=1"
-if not exist "node_modules\react-native-view-shot" set "NEED=1"
+node -e "const p=require('./package.json'),fs=require('fs');const m=Object.keys(Object.assign({},p.dependencies,p.devDependencies)).filter(d=>!fs.existsSync('node_modules/'+d));if(m.length){console.log('Missing: '+m.join(', '));process.exit(1)}"
+if errorlevel 1 set "NEED=1"
+if not exist "node_modules" set "NEED=1"
 if defined NEED (
   echo Installing missing packages...
   call npm install --legacy-peer-deps
@@ -125,6 +129,33 @@ if defined NEED (
 )
 exit /b 0
 
+:sync_native
+REM refresh the android folder (icons, splash) when app.json or assets changed
+node -e "const fs=require('fs');const s=fs.readFileSync('app.json','utf8');const m=(s.match(/\.\/assets\/[^'\x22]+/g)||[]).filter(f=>!fs.existsSync(f));if(m.length){console.log('app.json points to missing files: '+m.join(', '));process.exit(1)}"
+if errorlevel 1 (
+  echo Fix app.json or the assets folder first. Nothing was built.
+  pause
+  exit /b 1
+)
+set "NOW="
+for /f "delims=" %%h in ('node -e "const c=require('crypto'),fs=require('fs'),p=require('path');const h=c.createHash('sha256');h.update(fs.readFileSync('app.json'));fs.readdirSync('assets').filter(f=>fs.statSync(p.join('assets',f)).isFile()).sort().forEach(f=>h.update(fs.readFileSync(p.join('assets',f))));console.log(h.digest('hex'))"') do set "NOW=%%h"
+if not defined NOW exit /b 0
+set "OLD="
+if exist "android\.config-stamp" set /p "OLD="<"android\.config-stamp"
+if "%NOW%"=="%OLD%" exit /b 0
+echo.
+echo app.json or assets changed - updating the android folder (icons, splash)...
+if exist "android\app\build.gradle" copy /y "android\app\build.gradle" "android\app\build.gradle.bak" >nul
+if exist "android\gradle.properties" copy /y "android\gradle.properties" "android\gradle.properties.bak" >nul
+call npx expo prebuild --platform android --no-install
+if errorlevel 1 (
+  echo.
+  echo prebuild failed - see the messages above. Nothing was built.
+  pause
+  exit /b 1
+)
+>"android\.config-stamp" echo %NOW%
+exit /b 0
 :scan
 set "SERIAL="
 for /f "tokens=1,2" %%a in ('"%ADB%" devices') do if "%%b"=="device" set "SERIAL=%%a"
